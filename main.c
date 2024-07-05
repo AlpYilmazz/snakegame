@@ -17,7 +17,13 @@ typedef struct {
     int LINE_THICKNESS;
     int CONTENT_MARGIN;
     int CONTENT_CELL_SIZE;
+    int WALL_THICKNESS;
 } Grid;
+
+typedef struct {
+    int vertical[20][20];   // [row_i][col_i], [row_i][col_i + 1] -> [0][0], [0][1]
+    int horizontal[20][20]; // [col_i][row_i], [col_i][row_i + 1]
+} GridWalls;
 
 typedef enum {
     // INIT, PAUSE,
@@ -29,6 +35,7 @@ typedef enum {
 
 // -- GLOBAL VARIABLES -----
 Grid GRID;
+GridWalls GRID_WALLS;
 int GRID_GROUND_COUNT;
 GameState GAME_STATE;
 
@@ -120,7 +127,17 @@ int snake_len(Snake* snake) {
     return snake->tail_len + 1;
 }
 
-void move_snake(Snake* snake, CellVector move) {
+bool move_snake(Snake* snake, CellVector move) {
+    int row = snake->head.y;
+    int wall_v = snake->head.x + __max(move.x, 0);
+
+    int col = snake->head.x;
+    int wall_h = snake->head.y + __max(move.y, 0);
+
+    if (GRID_WALLS.vertical[row][wall_v] || GRID_WALLS.horizontal[col][wall_h]) {
+        return false;
+    }
+
     Cell follow = snake->head;
     snake->head = cell_add_wrapping(snake->head, move);
     for (int tail_i = 0; tail_i < snake->tail_len; tail_i++) {
@@ -129,6 +146,7 @@ void move_snake(Snake* snake, CellVector move) {
         follow = follow_temp;
     }
     snake->tail_drag = follow;
+    return true;
 }
 
 void eat_food(Snake* snake) {
@@ -300,6 +318,100 @@ void update_particles(Fireworks* fireworks, float delta_time) {
     }
 }
 
+typedef struct {
+    bool fireworks_started;
+    Fireworks* fireworks;
+    int fireworks_count;
+    int fireworks_index;
+    SequenceTimer fireworks_timer;
+} FireworksResources;
+
+void check_fireworks_started_system(
+    FireworksResources* fireworks_resources
+) {
+    if (IsKeyPressed(KEY_SPACE)) {
+        fireworks_resources->fireworks_started = true;
+    }
+}
+
+void fireworks_update_system(
+    float delta_time,
+    FireworksResources* fireworks_resources
+) {
+    bool fireworks_started = fireworks_resources->fireworks_started;
+    Fireworks* fireworks_ref = fireworks_resources->fireworks;
+    int fireworks_count = fireworks_resources->fireworks_count;
+    int* fireworks_index_ref = &fireworks_resources->fireworks_index;
+    SequenceTimer* fireworks_timer_ref = &fireworks_resources->fireworks_timer;
+
+    for (int i = 0; i < fireworks_count; i++) {
+        update_particles(&fireworks_ref[i], delta_time);
+    }
+
+    if (fireworks_started) {
+        tick_sequence_timer(fireworks_timer_ref, delta_time);
+        // printf("%f -> %d -> %d\n", fireworks_timer.time_elapsed, fireworks_timer.index, fireworks_timer.pulsed);
+        if (sequence_timer_has_pulsed(fireworks_timer_ref)) {
+            Fireworks* fireworks_i = &fireworks_ref[*fireworks_index_ref];
+            despawn_fireworks(fireworks_i);
+            spawn_fireworks(fireworks_i);
+
+            *fireworks_index_ref = (*fireworks_index_ref + 1) % fireworks_count;
+        }
+    }
+}
+
+void fireworks_draw_system(
+    FireworksResources* fireworks_resources
+) {
+    Fireworks* fireworks = fireworks_resources->fireworks;
+    int fireworks_count = fireworks_resources->fireworks_count;
+    for (int f_i = 0; f_i < fireworks_count; f_i++) {
+        Fireworks* fireworks_i = &fireworks[f_i];
+        for (int p_i = 0; p_i < fireworks_i->particle_count; p_i++) {
+            FireworkParticle particle = fireworks_i->particles[p_i];
+            // TODO: animate size, rotation and color alpha
+            float particle_size = particle.scale;
+            Color particle_color = fireworks_i->particle_color;
+
+            Rectangle particle_rect = {
+                .x = particle.position.x - particle_size/2,
+                .y = particle.position.y - particle_size/2,
+                .width = particle_size,
+                .height = particle_size,
+            };
+            DrawRectanglePro(
+                particle_rect,
+                (Vector2){ particle_rect.width/2.0, particle_rect.height/2.0 },
+                particle.rotation,
+                particle_color
+            );
+        }
+    }
+}
+
+typedef enum {
+    Orientation_Vertical,
+    Orientation_Horizontal,
+} Orientation;
+
+typedef struct {
+    bool hovered;
+    int lane;
+    int wall_index;
+    Orientation orientation;
+} Wall;
+
+Wall get_hovered_wall() {
+    Vector2 mouse = GetMousePosition();
+}
+
+void mock_win_by_space_press_system() {
+    if (IsKeyPressed(KEY_SPACE)) {
+        GAME_STATE = GAMEOVER_WIN;
+    }
+}
+
 int main() {
     srand(time(NULL));
 
@@ -309,19 +421,36 @@ int main() {
     const int SCREEN_HEIGHT = 1000;
 
     {
+        const int COLS = 10;
+        const int ROWS = 15;
         const int CELL_SIZE = 50;
         const int GRID_LINE_THICKNESS = 4;
         const int CONTENT_MARGIN = GRID_LINE_THICKNESS + GRID_LINE_THICKNESS/2;
         const int CONTENT_CELL_SIZE = CELL_SIZE - 2*CONTENT_MARGIN;
+        const int WALL_THICKNESS = 10;
         GRID = (Grid) {
-            .CELL_SIZE = 50,
-            .COLS = 10,
-            .ROWS = 15,
+            .CELL_SIZE = CELL_SIZE,
+            .COLS = COLS,
+            .ROWS = ROWS,
             .LINE_THICKNESS = GRID_LINE_THICKNESS,
             .CONTENT_MARGIN = CONTENT_MARGIN,
             .CONTENT_CELL_SIZE = CONTENT_CELL_SIZE,
+            .WALL_THICKNESS = WALL_THICKNESS,
         };
         GRID_GROUND_COUNT = GRID.ROWS * GRID.COLS;
+        
+        GRID_WALLS = (GridWalls) {
+            .vertical = {0},
+            .horizontal = {0},
+        };
+
+        for (int i = 0; i < ROWS; i++) {
+            GRID_WALLS.vertical[i][COLS/2] = 1;
+        }
+        for (int i = 0; i < COLS; i++) {
+            GRID_WALLS.horizontal[i][ROWS/2] = 1;
+        }
+
         GAME_STATE = PLAYING;
     }
     
@@ -396,16 +525,13 @@ int main() {
         fireworks_midscreen_3,
     };
 
-    // printf(
-    //     "%0.2f\n%d\n%d\n%0.2f, %0.2f, %0.2f, %0.2f\n",
-    //     fireworks_timer.time_elapsed,
-    //     fireworks_timer.checkpoint_count,
-    //     fireworks_timer.index,
-    //     fireworks_timer.checkpoints[0],
-    //     fireworks_timer.checkpoints[1],
-    //     fireworks_timer.checkpoints[2],
-    //     fireworks_timer.checkpoints[3]
-    // );
+    FireworksResources fireworks_resources = {
+        .fireworks_started = false,
+        .fireworks = &fireworks_winscreen[0],
+        .fireworks_count = fireworks_count,
+        .fireworks_index = 0,
+        .fireworks_timer = fireworks_timer,
+    };
 
     Snake snake = new_snake((Cell) { .x = 0, .y = 1 }, RIGHT);
     Cell food_cell = spawn_food(&snake);
@@ -421,6 +547,7 @@ int main() {
     Movement buffered_movement = NONE;
     int food_eaten_prev_update = 0;
     int head_gameover_cycle = 0;
+    int* last_hovered_wall = NULL;
 
     while (!WindowShouldClose()) {
         float delta_time = GetFrameTime();
@@ -448,29 +575,71 @@ int main() {
         }
         UPDATE_RATE_PER_SEC = Clamp(UPDATE_RATE_PER_SEC, 1.0, 6.0);
 
-        // DEBUG: Mock Win Case
-        if (IsKeyPressed(KEY_SPACE)) {
-            GAME_STATE = GAMEOVER_WIN;
+        Vector2 mouse = GetMousePosition();
+        Vector2 mouse_world = GetScreenToWorld2D(mouse, camera);
+        mouse_world.x += GRID.CELL_SIZE;
+        mouse_world.y += GRID.CELL_SIZE;
+        int row = (int)mouse_world.y / GRID.CELL_SIZE;
+        int col = (int)mouse_world.x / GRID.CELL_SIZE;
+        int row_u = ((int)mouse_world.y - 10) / GRID.CELL_SIZE;
+        int row_d = ((int)mouse_world.y + 10) / GRID.CELL_SIZE;
+        int col_l = ((int)mouse_world.x - 10) / GRID.CELL_SIZE;
+        int col_r = ((int)mouse_world.x + 10) / GRID.CELL_SIZE;
+        // printf("r : %d, ru: %d, rd: %d, c : %d, cr: %d, cl: %d\n",
+        //            row,  row_u,  row_d,    col,  col_r,  col_l);
 
-            fireworks_started = true;
-        }
-
-        for (int i = 0; i < fireworks_count; i++) {
-            update_particles(&fireworks_winscreen[i], delta_time);
-        }
-
-        if (fireworks_started) {
-            tick_sequence_timer(&fireworks_timer, delta_time);
-            // printf("%f -> %d -> %d\n", fireworks_timer.time_elapsed, fireworks_timer.index, fireworks_timer.pulsed);
-            if (sequence_timer_has_pulsed(&fireworks_timer)) {
-                Fireworks* fireworks = &fireworks_winscreen[fireworks_index];
-                despawn_fireworks(fireworks);
-                spawn_fireworks(fireworks);
-
-                fireworks_index++;
-                fireworks_index %= fireworks_count;
+        if (row < 0 || (GRID.ROWS+1) * GRID.CELL_SIZE < row
+            || col < 0 || (GRID.COLS+1) * GRID.CELL_SIZE < col
+        ) {
+            if (last_hovered_wall != NULL) {
+                *last_hovered_wall = 0;
             }
+            last_hovered_wall = NULL;
+            goto NEVERMIND;
         }
+
+        if (col < col_r) {
+            // wall: vertical[row][col+1]
+            if (last_hovered_wall != NULL) {
+                *last_hovered_wall = 0;
+            }
+            last_hovered_wall = &GRID_WALLS.vertical[row-1][col-1+1];
+            *last_hovered_wall = 1;
+        }
+        else if (col_l < col) {
+            // wall: vertical[row][col]
+            if (last_hovered_wall != NULL) {
+                *last_hovered_wall = 0;
+            }
+            last_hovered_wall = &GRID_WALLS.vertical[row-1][col-1];
+            *last_hovered_wall = 1;
+        }
+        else if (row < row_d) {
+            // wall: horizontal[col][row+1]
+            if (last_hovered_wall != NULL) {
+                *last_hovered_wall = 0;
+            }
+            last_hovered_wall = &GRID_WALLS.horizontal[col-1][row-1+1];
+            *last_hovered_wall = 1;
+        }
+        else if (row_u < row) {
+            // wall: horizontal[col][row]
+            if (last_hovered_wall != NULL) {
+                *last_hovered_wall = 0;
+            }
+            last_hovered_wall = &GRID_WALLS.horizontal[col-1][row-1];
+            *last_hovered_wall = 1;
+        }
+        else if (last_hovered_wall != NULL) {
+            *last_hovered_wall = 0;
+            last_hovered_wall = NULL;
+        }
+        NEVERMIND:
+
+        // DEBUG: Mock Win Case
+        mock_win_by_space_press_system();
+        check_fireworks_started_system(&fireworks_resources);
+        fireworks_update_system(delta_time, &fireworks_resources);
 
         // -- UPDATE -----
         if (time_elapsed >= 1.0/UPDATE_RATE_PER_SEC) {
@@ -496,12 +665,16 @@ int main() {
             }
             buffered_movement = NONE;
 
-            move_snake(&snake, move);
+            bool move_success = move_snake(&snake, move);
             if (food_eaten_prev_update) {
                 eat_food(&snake);
             }
             if (snake_len(&snake) == GRID_GROUND_COUNT) {
                 GAME_STATE = GAMEOVER_WIN;
+                goto POST_UPDATE;
+            }
+            if (!move_success) {
+                GAME_STATE = GAMEOVER_LOSE;
                 goto POST_UPDATE;
             }
             if (does_intersect(&snake)) {
@@ -530,7 +703,7 @@ int main() {
             BeginMode2D(camera);
 
                 DrawRectangleLinesEx(grid_frame, GRID.LINE_THICKNESS, BLUE);
-                DrawRectangleRec(grid_frame, BEIGE);
+                // DrawRectangleRec(grid_frame, BEIGE);
 
                 for (int i = 0; i < GRID.ROWS; i++) {
                     for (int j = 0; j < GRID.COLS; j++) {
@@ -540,7 +713,36 @@ int main() {
                             .width = GRID.CELL_SIZE,
                             .height = GRID.CELL_SIZE,
                         };
-                        DrawRectangleLinesEx(cell, GRID.LINE_THICKNESS/2, BLUE);
+                        DrawRectangleLinesEx(cell, GRID.LINE_THICKNESS/2, DARKGRAY);
+                    }
+                }
+
+                for (int i = 0; i < GRID.ROWS; i++) {
+                    for (int w = 0; w < GRID.COLS+1; w++) {
+                        if (!GRID_WALLS.vertical[i][w]) {
+                            continue;
+                        }
+                        Rectangle wall = {
+                            .x = (w * GRID.CELL_SIZE) - GRID.WALL_THICKNESS/2,
+                            .y = (i * GRID.CELL_SIZE),// + GRID.WALL_THICKNESS/2,
+                            .width = GRID.WALL_THICKNESS,
+                            .height = GRID.CELL_SIZE,// - GRID.WALL_THICKNESS,
+                        };
+                        DrawRectangleRec(wall, BLUE);
+                    }
+                }
+                for (int i = 0; i < GRID.COLS; i++) {
+                    for (int w = 0; w < GRID.ROWS+1; w++) {
+                        if (!GRID_WALLS.horizontal[i][w]) {
+                            continue;
+                        }
+                        Rectangle wall = {
+                            .x = (i * GRID.CELL_SIZE),// + GRID.WALL_THICKNESS/2,
+                            .y = (w * GRID.CELL_SIZE) - GRID.WALL_THICKNESS/2,
+                            .width = GRID.CELL_SIZE,// - GRID.WALL_THICKNESS,
+                            .height = GRID.WALL_THICKNESS,
+                        };
+                        DrawRectangleRec(wall, BLUE);
                     }
                 }
 
@@ -572,29 +774,8 @@ int main() {
                     DrawCircleV(food, GRID.CONTENT_CELL_SIZE/2, YELLOW);
                 }
 
-                for (int f_i = 0; f_i < fireworks_count; f_i++) {
-                    Fireworks* fireworks = &fireworks_winscreen[f_i];
-                    for (int p_i = 0; p_i < fireworks->particle_count; p_i++) {
-                        FireworkParticle particle = fireworks->particles[p_i];
-                        // TODO: animate size, rotation and color alpha
-                        float particle_size = particle.scale;
-                        Color particle_color = fireworks->particle_color;
-
-                        Rectangle particle_rect = {
-                            .x = particle.position.x - particle_size/2,
-                            .y = particle.position.y - particle_size/2,
-                            .width = particle_size,
-                            .height = particle_size,
-                        };
-                        DrawRectanglePro(
-                            particle_rect,
-                            (Vector2){ particle_rect.width/2.0, particle_rect.height/2.0 },
-                            particle.rotation,
-                            particle_color
-                        );
-                    }
-                }
-            
+                fireworks_draw_system(&fireworks_resources);
+                
             EndMode2D();
 
             const char* frame_str = TextFormat("%d", frame);
