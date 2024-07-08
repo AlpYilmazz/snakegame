@@ -2,6 +2,7 @@
 #include "stdio.h"
 #include "stdbool.h"
 #include "time.h"
+#include "string.h"
 
 #include "raylib.h"
 #include "rlgl.h"
@@ -34,6 +35,9 @@ typedef enum {
 // ---------------------
 
 // -- GLOBAL VARIABLES -----
+const int SCREEN_WIDTH = 1000;
+const int SCREEN_HEIGHT = 1000;
+
 Grid GRID;
 GridWalls GRID_WALLS;
 int GRID_GROUND_COUNT;
@@ -326,6 +330,71 @@ typedef struct {
     SequenceTimer fireworks_timer;
 } FireworksResources;
 
+FireworksResources FIREWORKS_WINSCREEN;
+
+void init_fireworks() {
+    Fireworks fireworks_1 = {
+        // .origin = Vector2Zero(),
+        // .origin = (Vector2) {
+        //     .x = 5.0,
+        //     .y = 5.0,
+        // },
+        .origin = (Vector2) {
+            .x = (GRID.CELL_SIZE * GRID.COLS)/2.0,
+            .y = (GRID.CELL_SIZE * (GRID.ROWS + 10))/2.0,
+        },
+        .spawn_radius_max = 50.0,
+        .spawn_radius_min = 10.0,
+        .start_angle = PI/4.0,
+        .end_angle = 3*PI/4.0,
+        .angle_increment = PI/40,
+        .particles_per_angle = 10,
+
+        .particle_speed = 400.0,
+        .particle_ttl = 2.0,
+        .particle_spawn_size = 20.0,
+
+        .particle_color = RED,
+    };
+
+    Fireworks fireworks_2 = fireworks_1;
+    fireworks_2.origin = (Vector2) {
+        .x = (GRID.CELL_SIZE * (GRID.COLS + 6))/2.0,
+        .y = (GRID.CELL_SIZE * (GRID.ROWS + 16))/2.0,
+    };
+    fireworks_2.particle_speed = 700.0;
+    fireworks_2.particle_spawn_size = 30.0;
+    fireworks_2.particle_color = BLUE;
+
+    Fireworks fireworks_3 = fireworks_1;
+    fireworks_3.origin = (Vector2) {
+        .x = (GRID.CELL_SIZE * (GRID.COLS - 6))/2.0,
+        .y = (GRID.CELL_SIZE * (GRID.ROWS + 26))/2.0,
+    };
+    fireworks_3.particle_speed = 700.0;
+    fireworks_3.particle_ttl = 4.0;
+    fireworks_3.particle_color = MAGENTA;
+
+    float sq[4] = { 0.5, 1.2, 1.5, 3.0 };
+    SequenceTimer fireworks_timer = new_sequence_timer(&sq[0], 4);
+    bool fireworks_started = false;
+    int fireworks_index = 0;
+    const int fireworks_count = 3;
+    Fireworks fireworks_winscreen[3] = {
+        fireworks_1,
+        fireworks_2,
+        fireworks_3,
+    };
+
+    FIREWORKS_WINSCREEN = (FireworksResources) {
+        .fireworks_started = false,
+        .fireworks = &fireworks_winscreen[0],
+        .fireworks_count = fireworks_count,
+        .fireworks_index = 0,
+        .fireworks_timer = fireworks_timer,
+    };
+}
+
 void check_fireworks_started_system(
     FireworksResources* fireworks_resources
 ) {
@@ -390,20 +459,76 @@ void fireworks_draw_system(
     }
 }
 
-typedef enum {
-    Orientation_Vertical,
-    Orientation_Horizontal,
-} Orientation;
-
 typedef struct {
-    bool hovered;
-    int lane;
-    int wall_index;
-    Orientation orientation;
-} Wall;
+    int rows;
+    int cols;
+    Cell snake_entry_cell;
+    Movement snake_entry_momentum;
+    int vertical_walls[20][20];
+    int horizontal_walls[20][20];
+} GameLevel;
 
-Wall get_hovered_wall() {
-    Vector2 mouse = GetMousePosition();
+void save_level(int level_index, GameLevel* level) {
+    char filename[50] = {0};
+    sprintf(filename, "./levels/%d.lvl", level_index);
+    FILE* file = fopen(filename, "w");
+
+    fprintf(file, "%d %d\n", level->rows, level->cols);
+    fprintf(file, "%d %d\n", level->snake_entry_cell.x, level->snake_entry_cell.y);
+    fprintf(file, "%d\n", level->snake_entry_momentum);
+    for (int i = 0; i < level->rows; i++) {
+        fprintf(file, "%d", level->vertical_walls[i][0]);
+        for (int j = 1; j < level->cols + 1; j++) {
+            fprintf(file, " %d", level->vertical_walls[i][j]);
+        }
+        fprintf(file, "\n");
+    }
+    for (int i = 0; i < level->cols; i++) {
+        fprintf(file, "%d", level->horizontal_walls[i][0]);
+        for (int j = 1; j < level->rows + 1; j++) {
+            fprintf(file, " %d", level->horizontal_walls[i][j]);
+        }
+        fprintf(file, "\n");
+    }
+
+    fclose(file);
+}
+
+GameLevel load_level(int level_index) {
+    GameLevel level = {0};
+
+    char filename[50] = {0};
+    sprintf(filename, "./levels/%d.lvl", level_index);
+    FILE* file = fopen(filename, "r");
+    if (file == NULL) {
+        level = (GameLevel) {
+            .rows = 15,
+            .cols = 10,
+            .snake_entry_cell = (Cell) { 0, 7 },
+            .snake_entry_momentum = RIGHT,
+            .vertical_walls = {0},
+            .horizontal_walls = {0},
+        };
+        save_level(level_index, &level);
+        return level;
+    }
+
+    fscanf(file, "%d %d\n", &level.rows, &level.cols);
+    fscanf(file, "%d %d\n", &level.snake_entry_cell.x, &level.snake_entry_cell.y);
+    fscanf(file, "%d\n", &level.snake_entry_momentum);
+    for (int i = 0; i < level.rows; i++) {
+        for (int j = 0; j < level.cols + 1; j++) {
+            fscanf(file, "%d", &level.vertical_walls[i][j]);
+        }
+    }
+    for (int i = 0; i < level.cols; i++) {
+        for (int j = 0; j < level.rows + 1; j++) {
+            fscanf(file, "%d", &level.horizontal_walls[i][j]);
+        }
+    }
+
+    fclose(file);
+    return level;
 }
 
 void mock_win_by_space_press_system() {
@@ -412,52 +537,328 @@ void mock_win_by_space_press_system() {
     }
 }
 
-int main() {
-    srand(time(NULL));
+typedef struct {
+    int id;
+    char input[21];
+    Vector2 position;
+    Vector2 size;
+    Color color;
+    bool disabled;
+} TextInput;
 
-    float UPDATE_RATE_PER_SEC = 2;
+void TextInput_input(TextInput* text_input, char input) {
+    int len = strlen(text_input->input);
+    if (len < 21 - 1) { // at least one '\0' slot
+        text_input->input[len] = input;
+        text_input->input[len+1] = '\0';
+    }
+}
 
-    const int SCREEN_WIDTH = 1000;
-    const int SCREEN_HEIGHT = 1000;
+void TextInput_delete_back(TextInput* text_input) {
+    int len = strlen(text_input->input);
+    if (len > 0) {
+        text_input->input[len-1] = '\0';
+    }
+}
 
-    {
-        const int COLS = 10;
-        const int ROWS = 15;
-        const int CELL_SIZE = 50;
-        const int GRID_LINE_THICKNESS = 4;
-        const int CONTENT_MARGIN = GRID_LINE_THICKNESS + GRID_LINE_THICKNESS/2;
-        const int CONTENT_CELL_SIZE = CELL_SIZE - 2*CONTENT_MARGIN;
-        const int WALL_THICKNESS = 10;
-        GRID = (Grid) {
-            .CELL_SIZE = CELL_SIZE,
-            .COLS = COLS,
-            .ROWS = ROWS,
-            .LINE_THICKNESS = GRID_LINE_THICKNESS,
-            .CONTENT_MARGIN = CONTENT_MARGIN,
-            .CONTENT_CELL_SIZE = CONTENT_CELL_SIZE,
-            .WALL_THICKNESS = WALL_THICKNESS,
-        };
-        GRID_GROUND_COUNT = GRID.ROWS * GRID.COLS;
-        
-        GRID_WALLS = (GridWalls) {
-            .vertical = {0},
-            .horizontal = {0},
-        };
+bool TextInput_hovered(TextInput* text_input) {
+    Vector2 mouse = GetMousePosition();
+    return text_input->position.x <= mouse.x && mouse.x <= text_input->position.x + text_input->size.x
+        && text_input->position.y <= mouse.y && mouse.y <= text_input->position.y + text_input->size.y;
+}
 
-        for (int i = 0; i < ROWS; i++) {
-            GRID_WALLS.vertical[i][COLS/2] = 1;
+typedef struct {
+    int id;
+    char title[20];
+    Vector2 position;
+    Vector2 size;
+    Color color;
+    bool disabled;
+} Button;
+
+bool Button_hovered(Button* button) {
+    Vector2 mouse = GetMousePosition();
+    return button->position.x <= mouse.x && mouse.x <= button->position.x + button->size.x
+        && button->position.y <= mouse.y && mouse.y <= button->position.y + button->size.y;
+}
+
+void edit_level(GameLevel const* level) {
+    Vector2 button_size = { 300, 100 };
+    Vector2 sq_small_button_size = { 50, 50 };
+    Vector2 button_margin = Vector2Scale(button_size, 0.25);
+    // Vector2 first_button_position = {
+    //     .x = 15,
+    //     .y = SCREEN_HEIGHT/2 - (button_count * button_size.y + (button_count-1) * button_margin_y)/2,
+    // };
+    Color button_idle_color = WHITE;
+    Color button_hover_color = YELLOW;
+    Color button_clicked_color = ORANGE;
+
+    float div_margin_x = button_margin.x;
+    Vector2 buttons_div_size = {
+        .x = 2*button_margin.x + button_size.x,
+        .y = 4*sq_small_button_size.y + 5*button_margin.y,
+    };
+    Vector2 buttons_div_position = {
+        .x = div_margin_x,
+        .y = SCREEN_HEIGHT/2 - buttons_div_size.y/2,
+    };
+
+    Button update_button = (Button) {
+        .title = "UPDATE",
+        .position = (Vector2) {
+            .x = buttons_div_position.x,
+            .y = buttons_div_position.y + sq_small_button_size.y + button_margin.y,
+        },
+        .size = Vector2Scale(button_size, 0.5),
+    };
+    Button up_button = (Button) {
+        .title = "U",
+        .position = (Vector2) {
+            .x = buttons_div_position.x + sq_small_button_size.x,
+            .y = update_button.position.y + update_button.size.y + 2*button_margin.y,
+        },
+        .size = sq_small_button_size,
+    };
+    Button down_button = (Button) {
+        .title = "D",
+        .position = (Vector2) {
+            .x = buttons_div_position.x + sq_small_button_size.x,
+            .y = up_button.position.y + 2*sq_small_button_size.y,
+        },
+        .size = sq_small_button_size,
+    };
+    Button right_button = (Button) {
+        .title = "R",
+        .position = (Vector2) {
+            .x = buttons_div_position.x + 2*sq_small_button_size.x,
+            .y = up_button.position.y + sq_small_button_size.y,
+        },
+        .size = sq_small_button_size,
+    };
+    Button left_button = (Button) {
+        .title = "L",
+        .position = (Vector2) {
+            .x = buttons_div_position.x,
+            .y = up_button.position.y + sq_small_button_size.y,
+        },
+        .size = sq_small_button_size,
+    };
+
+    Button save_button = (Button) {
+        .title = "SAVE",
+        .position = (Vector2) {
+            .x = buttons_div_position.x,
+            .y = down_button.position.y + down_button.size.y + 2*button_margin.y,
+        },
+        .size = Vector2Scale(button_size, 0.5),
+    };
+
+    TextInput rows_text_input = (TextInput) {
+        .input = {0},
+        .position = buttons_div_position,
+        .size = sq_small_button_size,
+    };
+    TextInput cols_text_input = (TextInput) {
+        .input = {0},
+        .position = (Vector2) {
+            .x = buttons_div_position.x + rows_text_input.size.x + button_margin.x/2,
+            .y = buttons_div_position.y,
+        },
+        .size = sq_small_button_size,
+    };
+
+    sprintf(&rows_text_input.input[0], "%d", level->rows);
+    sprintf(&cols_text_input.input[0], "%d", level->cols);
+
+    int text_input_count = 2;
+    TextInput text_inputs[2] = {
+        rows_text_input,
+        cols_text_input,
+    };
+
+    for (int i = 0; i < text_input_count; i++) {
+        TextInput* text_input = &text_inputs[i];
+        text_input->id = i;
+        text_input->color = button_idle_color;
+    }
+
+    int button_count = 6;
+    Button buttons[6] = {
+        update_button,
+        up_button,
+        down_button,
+        right_button,
+        left_button,
+        save_button,
+    };
+
+    for (int i = 0; i < button_count; i++) {
+        Button* button = &buttons[i];
+        button->id = i;
+        button->color = button_idle_color;
+    }
+
+    int active_text_input_id = -1;
+
+    bool editor_should_close = false;
+    while (!editor_should_close && !WindowShouldClose()) {
+        int hovered_text_input_id = -1;
+        for (int i = 0; i < text_input_count; i++) {
+            if (TextInput_hovered(&text_inputs[i])) {
+                hovered_text_input_id = i;
+            }
         }
-        for (int i = 0; i < COLS; i++) {
-            GRID_WALLS.horizontal[i][ROWS/2] = 1;
+
+        int hovered_button_id = -1;
+        for (int i = 0; i < button_count; i++) {
+            if (Button_hovered(&buttons[i])) {
+                hovered_button_id = i;
+                buttons[i].color = button_hover_color;
+            }
+            else {
+                buttons[i].color = button_idle_color;
+            }
         }
 
-        GAME_STATE = PLAYING;
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+            if (hovered_text_input_id != -1) {
+                if (active_text_input_id != -1 && active_text_input_id != hovered_text_input_id) {
+                    text_inputs[active_text_input_id].color = button_idle_color;
+                }
+                active_text_input_id = hovered_text_input_id;
+                text_inputs[active_text_input_id].color = button_clicked_color;
+            }
+            else {
+                if (active_text_input_id != -1) {
+                    text_inputs[active_text_input_id].color = button_idle_color;
+                }
+                active_text_input_id = -1;
+            }
+
+            // if (hovered_button_id != -1) {
+            //     buttons[hovered_button_id].color = button_clicked_color;
+            // }
+        }
+
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            if (hovered_button_id != -1) {
+                // buttons[hovered_button_id].color = button_idle_color;
+
+                switch (hovered_button_id) {
+                case 0: // UPDATE GRID
+                    sscanf(&text_inputs[0].input[0], "%d", &level->rows);
+                    sscanf(&text_inputs[1].input[0], "%d", &level->cols);
+                    break;
+                case 1: // UP
+                    break;
+                case 2: // DOWN
+                    break;
+                case 3: // LEFT
+                    break;
+                case 4: // RIGHT
+                    break;
+                case 5: // SAVE
+                    editor_should_close = true;
+                    break;
+                }
+            }
+        }
+
+        if (active_text_input_id != -1) {
+            int key = GetKeyPressed();
+            if ('0' <= key && key <= '9') {
+                TextInput_input(&text_inputs[active_text_input_id], key);
+            }
+            if (key == KEY_BACKSPACE) {
+                TextInput_delete_back(&text_inputs[active_text_input_id]);
+            }
+        }
+
+        // -- DRAW --
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        for (int i = 0; i < text_input_count; i++) {
+            TextInput* text_input = &text_inputs[i];
+
+            Font input_font = GetFontDefault();
+            int input_font_size = 20;
+            int input_spacing = 2;
+            Vector2 text_size = MeasureTextEx(input_font, text_input->input, input_font_size, input_spacing);
+
+            DrawRectangle(
+                text_input->position.x,
+                text_input->position.y,
+                text_input->size.x,
+                text_input->size.y,
+                text_input->color
+            );
+            DrawTextEx(
+                input_font,
+                text_input->input,
+                (Vector2) {
+                    .x = text_input->position.x + text_input->size.x/2 - text_size.x/2,
+                    .y = text_input->position.y + text_input->size.y/2 - text_size.y/2,
+                },
+                input_font_size,
+                input_spacing,
+                RED
+            );
+        }
+
+        for (int i = 0; i < button_count; i++) {
+            Button* button = &buttons[i];
+
+            Font title_font = GetFontDefault();
+            int title_font_size = 30;
+            int title_spacing = 2;
+            Vector2 text_size = MeasureTextEx(title_font, button->title, title_font_size, title_spacing);
+
+            DrawRectangle(
+                button->position.x,
+                button->position.y,
+                button->size.x,
+                button->size.y,
+                button->color
+            );
+            DrawTextEx(
+                title_font,
+                button->title,
+                (Vector2) {
+                    .x = button->position.x + button->size.x/2 - text_size.x/2,
+                    .y = button->position.y + button->size.y/2 - text_size.y/2,
+                },
+                title_font_size,
+                title_spacing,
+                BLUE
+            );
+        }
+
+        EndDrawing();
+    }
+}
+
+void play_level(const GameLevel const* level) {
+    GAME_STATE = PLAYING;
+
+    GRID.ROWS = level->rows;
+    GRID.COLS = level->cols;
+    GRID_GROUND_COUNT = GRID.ROWS * GRID.COLS;
+
+    for (int i = 0; i < level->rows; i++) {
+        for (int j = 0; j < level->cols + 1; j++) {
+            GRID_WALLS.vertical[i][j] = level->vertical_walls[i][j];
+        }
+    }
+    for (int i = 0; i < level->cols; i++) {
+        for (int j = 0; j < level->rows + 1; j++) {
+            GRID_WALLS.horizontal[i][j] = level->horizontal_walls[i][j];
+        }
     }
     
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Snake Game");
-    
-    SetTargetFPS(30);
-    
+    float UPDATE_RATE_PER_SEC = 2;
+
     Camera2D camera = {0};
     camera.zoom = 1.0;
     camera.offset = (Vector2) {
@@ -472,72 +873,11 @@ int main() {
         .height = GRID.CELL_SIZE * GRID.ROWS,
     };
 
-    Fireworks fireworks_midscreen = {
-        // .origin = Vector2Zero(),
-        // .origin = (Vector2) {
-        //     .x = 5.0,
-        //     .y = 5.0,
-        // },
-        .origin = (Vector2) {
-            .x = (GRID.CELL_SIZE * GRID.COLS)/2.0,
-            .y = (GRID.CELL_SIZE * (GRID.ROWS + 10))/2.0,
-        },
-        .spawn_radius_max = 50.0,
-        .spawn_radius_min = 10.0,
-        .start_angle = PI/4.0,
-        .end_angle = 3*PI/4.0,
-        .angle_increment = PI/40,
-        .particles_per_angle = 10,
-
-        .particle_speed = 400.0,
-        .particle_ttl = 2.0,
-        .particle_spawn_size = 20.0,
-
-        .particle_color = RED,
-    };
-
-    Fireworks fireworks_midscreen_2 = fireworks_midscreen;
-    fireworks_midscreen_2.origin = (Vector2) {
-        .x = (GRID.CELL_SIZE * (GRID.COLS + 6))/2.0,
-        .y = (GRID.CELL_SIZE * (GRID.ROWS + 16))/2.0,
-    };
-    fireworks_midscreen_2.particle_speed = 700.0;
-    fireworks_midscreen_2.particle_spawn_size = 30.0;
-    fireworks_midscreen_2.particle_color = BLUE;
-
-    Fireworks fireworks_midscreen_3 = fireworks_midscreen;
-    fireworks_midscreen_3.origin = (Vector2) {
-        .x = (GRID.CELL_SIZE * (GRID.COLS - 6))/2.0,
-        .y = (GRID.CELL_SIZE * (GRID.ROWS + 26))/2.0,
-    };
-    fireworks_midscreen_3.particle_speed = 700.0;
-    fireworks_midscreen_3.particle_ttl = 4.0;
-    fireworks_midscreen_3.particle_color = MAGENTA;
-
-    float sq[4] = { 0.5, 1.2, 1.5, 3.0 };
-    SequenceTimer fireworks_timer = new_sequence_timer(&sq[0], 4);
-    bool fireworks_started = false;
-    int fireworks_index = 0;
-    const int fireworks_count = 3;
-    Fireworks fireworks_winscreen[3] = {
-        fireworks_midscreen,
-        fireworks_midscreen_2,
-        fireworks_midscreen_3,
-    };
-
-    FireworksResources fireworks_resources = {
-        .fireworks_started = false,
-        .fireworks = &fireworks_winscreen[0],
-        .fireworks_count = fireworks_count,
-        .fireworks_index = 0,
-        .fireworks_timer = fireworks_timer,
-    };
-
-    Snake snake = new_snake((Cell) { .x = 0, .y = 1 }, RIGHT);
+    Snake snake = new_snake(level->snake_entry_cell, level->snake_entry_momentum);
     Cell food_cell = spawn_food(&snake);
     int food_eaten = 0;
 
-    Vector2 food = {
+    Vector2 food_origin = {
         .x = food_cell.x*GRID.CELL_SIZE + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2,
         .y = food_cell.y*GRID.CELL_SIZE + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2,
     };
@@ -548,10 +888,15 @@ int main() {
     int food_eaten_prev_update = 0;
     int head_gameover_cycle = 0;
     int* last_hovered_wall = NULL;
-
-    while (!WindowShouldClose()) {
+    
+    bool level_should_exit = false;
+    while (!level_should_exit) {
         float delta_time = GetFrameTime();
         time_elapsed += delta_time;
+
+        if (IsKeyPressed(KEY_ESCAPE)) {
+            level_should_exit = true;
+        }
 
         // -- BUFFER -----
         if (IsKeyPressed(KEY_UP) || IsKeyPressedRepeat(KEY_UP)) {
@@ -575,71 +920,52 @@ int main() {
         }
         UPDATE_RATE_PER_SEC = Clamp(UPDATE_RATE_PER_SEC, 1.0, 6.0);
 
-        Vector2 mouse = GetMousePosition();
-        Vector2 mouse_world = GetScreenToWorld2D(mouse, camera);
-        mouse_world.x += GRID.CELL_SIZE;
-        mouse_world.y += GRID.CELL_SIZE;
-        int row = (int)mouse_world.y / GRID.CELL_SIZE;
-        int col = (int)mouse_world.x / GRID.CELL_SIZE;
-        int row_u = ((int)mouse_world.y - 10) / GRID.CELL_SIZE;
-        int row_d = ((int)mouse_world.y + 10) / GRID.CELL_SIZE;
-        int col_l = ((int)mouse_world.x - 10) / GRID.CELL_SIZE;
-        int col_r = ((int)mouse_world.x + 10) / GRID.CELL_SIZE;
-        // printf("r : %d, ru: %d, rd: %d, c : %d, cr: %d, cl: %d\n",
-        //            row,  row_u,  row_d,    col,  col_r,  col_l);
+        // Vector2 mouse = GetMousePosition();
+        // Vector2 mouse_world = GetScreenToWorld2D(mouse, camera);
+        // mouse_world.x += GRID.CELL_SIZE;
+        // mouse_world.y += GRID.CELL_SIZE;
+        // int row = (int)mouse_world.y / GRID.CELL_SIZE;
+        // int col = (int)mouse_world.x / GRID.CELL_SIZE;
+        // int row_u = ((int)mouse_world.y - 10) / GRID.CELL_SIZE;
+        // int row_d = ((int)mouse_world.y + 10) / GRID.CELL_SIZE;
+        // int col_l = ((int)mouse_world.x - 10) / GRID.CELL_SIZE;
+        // int col_r = ((int)mouse_world.x + 10) / GRID.CELL_SIZE;
 
-        if (row < 0 || (GRID.ROWS+1) * GRID.CELL_SIZE < row
-            || col < 0 || (GRID.COLS+1) * GRID.CELL_SIZE < col
-        ) {
-            if (last_hovered_wall != NULL) {
-                *last_hovered_wall = 0;
-            }
-            last_hovered_wall = NULL;
-            goto NEVERMIND;
-        }
+        // if (0 <= row && row <= (GRID.ROWS+1) * GRID.CELL_SIZE
+        //     && 0 <= col && col <= (GRID.COLS+1) * GRID.CELL_SIZE
+        // ) {
+        //     if (col < col_r) {
+        //         // wall: vertical[row][col+1]
+        //         last_hovered_wall = &GRID_WALLS.vertical[row-1][col-1+1];
+        //     }
+        //     else if (col_l < col) {
+        //         // wall: vertical[row][col]
+        //         last_hovered_wall = &GRID_WALLS.vertical[row-1][col-1];
+        //     }
+        //     else if (row < row_d) {
+        //         // wall: horizontal[col][row+1]
+        //         last_hovered_wall = &GRID_WALLS.horizontal[col-1][row-1+1];
+        //     }
+        //     else if (row_u < row) {
+        //         // wall: horizontal[col][row]
+        //         last_hovered_wall = &GRID_WALLS.horizontal[col-1][row-1];
+        //     }
+        //     else if (last_hovered_wall != NULL) {
+        //         last_hovered_wall = NULL;
+        //     }
+        // }
+        // else {
+        //     last_hovered_wall = NULL;
+        // }
 
-        if (col < col_r) {
-            // wall: vertical[row][col+1]
-            if (last_hovered_wall != NULL) {
-                *last_hovered_wall = 0;
-            }
-            last_hovered_wall = &GRID_WALLS.vertical[row-1][col-1+1];
-            *last_hovered_wall = 1;
-        }
-        else if (col_l < col) {
-            // wall: vertical[row][col]
-            if (last_hovered_wall != NULL) {
-                *last_hovered_wall = 0;
-            }
-            last_hovered_wall = &GRID_WALLS.vertical[row-1][col-1];
-            *last_hovered_wall = 1;
-        }
-        else if (row < row_d) {
-            // wall: horizontal[col][row+1]
-            if (last_hovered_wall != NULL) {
-                *last_hovered_wall = 0;
-            }
-            last_hovered_wall = &GRID_WALLS.horizontal[col-1][row-1+1];
-            *last_hovered_wall = 1;
-        }
-        else if (row_u < row) {
-            // wall: horizontal[col][row]
-            if (last_hovered_wall != NULL) {
-                *last_hovered_wall = 0;
-            }
-            last_hovered_wall = &GRID_WALLS.horizontal[col-1][row-1];
-            *last_hovered_wall = 1;
-        }
-        else if (last_hovered_wall != NULL) {
-            *last_hovered_wall = 0;
-            last_hovered_wall = NULL;
-        }
-        NEVERMIND:
+        // if (last_hovered_wall != NULL && IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        //     *last_hovered_wall = !*last_hovered_wall;
+        // }
 
         // DEBUG: Mock Win Case
         mock_win_by_space_press_system();
-        check_fireworks_started_system(&fireworks_resources);
-        fireworks_update_system(delta_time, &fireworks_resources);
+        check_fireworks_started_system(&FIREWORKS_WINSCREEN);
+        fireworks_update_system(delta_time, &FIREWORKS_WINSCREEN);
 
         // -- UPDATE -----
         if (time_elapsed >= 1.0/UPDATE_RATE_PER_SEC) {
@@ -686,8 +1012,8 @@ int main() {
                 food_eaten_prev_update = 1;
                 food_eaten++;
                 food_cell = spawn_food(&snake);
-                food.x = food_cell.x*GRID.CELL_SIZE + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2;
-                food.y = food_cell.y*GRID.CELL_SIZE + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2;
+                food_origin.x = food_cell.x*GRID.CELL_SIZE + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2;
+                food_origin.y = food_cell.y*GRID.CELL_SIZE + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2;
             }
             else {
                 food_eaten_prev_update = 0;
@@ -703,7 +1029,7 @@ int main() {
             BeginMode2D(camera);
 
                 DrawRectangleLinesEx(grid_frame, GRID.LINE_THICKNESS, BLUE);
-                // DrawRectangleRec(grid_frame, BEIGE);
+                DrawRectangleRec(grid_frame, BEIGE);
 
                 for (int i = 0; i < GRID.ROWS; i++) {
                     for (int j = 0; j < GRID.COLS; j++) {
@@ -719,30 +1045,43 @@ int main() {
 
                 for (int i = 0; i < GRID.ROWS; i++) {
                     for (int w = 0; w < GRID.COLS+1; w++) {
-                        if (!GRID_WALLS.vertical[i][w]) {
-                            continue;
-                        }
-                        Rectangle wall = {
+                        int* wall = &GRID_WALLS.vertical[i][w];
+                        Rectangle wall_rect = {
                             .x = (w * GRID.CELL_SIZE) - GRID.WALL_THICKNESS/2,
                             .y = (i * GRID.CELL_SIZE),// + GRID.WALL_THICKNESS/2,
                             .width = GRID.WALL_THICKNESS,
                             .height = GRID.CELL_SIZE,// - GRID.WALL_THICKNESS,
                         };
-                        DrawRectangleRec(wall, BLUE);
+                        Color wall_color = BLUE;
+                        if (*wall) {
+                            if (wall == last_hovered_wall) {
+                                wall_color = RED;
+                            }
+                            DrawRectangleRec(wall_rect, wall_color);
+                        }
+                        if (wall == last_hovered_wall) {
+                            wall_color.a = 120;
+                            DrawRectangleRec(wall_rect, wall_color);
+                        }
                     }
                 }
                 for (int i = 0; i < GRID.COLS; i++) {
                     for (int w = 0; w < GRID.ROWS+1; w++) {
-                        if (!GRID_WALLS.horizontal[i][w]) {
-                            continue;
-                        }
-                        Rectangle wall = {
+                        int* wall = &GRID_WALLS.horizontal[i][w];
+                        Rectangle wall_rect = {
                             .x = (i * GRID.CELL_SIZE),// + GRID.WALL_THICKNESS/2,
                             .y = (w * GRID.CELL_SIZE) - GRID.WALL_THICKNESS/2,
                             .width = GRID.CELL_SIZE,// - GRID.WALL_THICKNESS,
                             .height = GRID.WALL_THICKNESS,
                         };
-                        DrawRectangleRec(wall, BLUE);
+                        Color wall_color = BLUE;
+                        if (*wall) {
+                            DrawRectangleRec(wall_rect, wall_color);
+                        }
+                        if (wall == last_hovered_wall) {
+                            wall_color.a = 150;
+                            DrawRectangleRec(wall_rect, wall_color);
+                        }
                     }
                 }
 
@@ -771,10 +1110,10 @@ int main() {
                 DrawRectangleRec(snake_head_content, snake_head_color);
 
                 if (GAME_STATE != GAMEOVER_WIN) {
-                    DrawCircleV(food, GRID.CONTENT_CELL_SIZE/2, YELLOW);
+                    DrawCircleV(food_origin, GRID.CONTENT_CELL_SIZE/2, YELLOW);
                 }
 
-                fireworks_draw_system(&fireworks_resources);
+                fireworks_draw_system(&FIREWORKS_WINSCREEN);
                 
             EndMode2D();
 
@@ -812,6 +1151,140 @@ int main() {
                 Color text_color = RED;
                 DrawTextEx(font_default, text, text_position, font_size, text_spacing, text_color);
             }
+
+        EndDrawing();
+    }
+}
+
+int main() {
+    srand(time(NULL));
+
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Snake Game");
+    
+    SetTargetFPS(30);
+
+    {
+        const int CELL_SIZE = 50;
+        const int GRID_LINE_THICKNESS = 4;
+        const int CONTENT_MARGIN = GRID_LINE_THICKNESS + GRID_LINE_THICKNESS/2;
+        const int CONTENT_CELL_SIZE = CELL_SIZE - 2*CONTENT_MARGIN;
+        const int WALL_THICKNESS = 10;
+        GRID = (Grid) {
+            .CELL_SIZE = CELL_SIZE,
+            .COLS = 0,
+            .ROWS = 0,
+            .LINE_THICKNESS = GRID_LINE_THICKNESS,
+            .CONTENT_MARGIN = CONTENT_MARGIN,
+            .CONTENT_CELL_SIZE = CONTENT_CELL_SIZE,
+            .WALL_THICKNESS = WALL_THICKNESS,
+        };
+        
+        // GRID_WALLS = (GridWalls) {
+        //     .vertical = {0},
+        //     .horizontal = {0},
+        // };
+
+        // for (int i = 0; i < ROWS; i++) {
+        //     GRID_WALLS.vertical[i][COLS/2] = 1;
+        // }
+        // for (int i = 0; i < COLS; i++) {
+        //     GRID_WALLS.horizontal[i][ROWS/2] = 1;
+        // }
+    }
+
+    int button_count = 3;
+    Vector2 button_size = { 300, 100 };
+    float button_margin_y = button_size.y/4;
+    Vector2 first_button_position = {
+        .x = SCREEN_WIDTH/2 - button_size.x/2,
+        .y = SCREEN_HEIGHT/2 - (button_count * button_size.y + (button_count-1) * button_margin_y)/2,
+    };
+    Color button_idle_color = WHITE;
+    Color button_hover_color = YELLOW;
+
+    Button buttons[3] = {
+        (Button) {
+            .title = "PLAY",
+        },
+        (Button) {
+            .title = "LEVEL EDIT",
+        },
+        (Button) {
+            .title = "EXIT",
+        },
+    };
+
+    for (int i = 0; i < button_count; i++) {
+        Button* button = &buttons[i];
+        button->id = i;
+        button->position = first_button_position;
+        button->position.y += i * (button_size.y + button_margin_y);
+        button->size = button_size;
+        button->color = button_idle_color;
+        button->disabled = false;
+    }
+
+    GameLevel level_0 = load_level(0);
+
+    bool window_should_close = false;
+    while (!window_should_close && !WindowShouldClose()) {
+        int hovered_button_id = -1;
+        for (int i = 0; i < button_count; i++) {
+            if (Button_hovered(&buttons[i])) {
+                hovered_button_id = i;
+                buttons[i].color = button_hover_color;
+            }
+            else {
+                buttons[i].color = button_idle_color;
+            }
+        }
+
+        if (hovered_button_id != -1 && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
+            switch (hovered_button_id) {
+            case 0: // PLAY
+                play_level(&level_0);
+                break;
+            case 1: // LEVEL EDIT
+                edit_level(&level_0);
+                save_level(0, &level_0);
+                break;
+            case 2: // EXIT
+                window_should_close = true;
+                break;
+            }
+        }
+
+        // -- DRAW --
+        BeginDrawing();
+        ClearBackground(BLACK);
+
+        for (int i = 0; i < button_count; i++) {
+            Button* button = &buttons[i];
+
+            Font title_font = GetFontDefault();
+            int title_font_size = 30;
+            int title_spacing = 2;
+            Vector2 text_size = MeasureTextEx(title_font, button->title, title_font_size, title_spacing);
+
+            DrawRectangle(
+                button->position.x,
+                button->position.y,
+                button->size.x,
+                button->size.y,
+                button->color
+            );
+            DrawTextEx(
+                title_font,
+                button->title,
+                (Vector2) {
+                    .x = button->position.x + button->size.x/2 - text_size.x/2,
+                    .y = button->position.y + button->size.y/2 - text_size.y/2,
+                },
+                title_font_size,
+                title_spacing,
+                BLUE
+            );
+        }
 
         EndDrawing();
     }
