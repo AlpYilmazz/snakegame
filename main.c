@@ -8,29 +8,13 @@
 #include "rlgl.h"
 #include "raymath.h"
 
-#include "util.c"
+#include "grid.h"
+#include "util.h"
+#include "gameui.h"
+#include "snake.h"
+#include "fireworks.h"
 
 // -- GLOBAL VARIABLE TYPES -----
-typedef struct {
-    int CELL_SIZE;
-    int LINE_THICKNESS;
-    int CONTENT_MARGIN;
-    int CONTENT_CELL_SIZE;
-    int WALL_THICKNESS;
-} Grid;
-
-typedef struct {
-    int ROWS;
-    int COLS;
-    int HEIGHT;
-    int WIDTH;
-} GridDimentions;
-
-typedef struct {
-    int vertical[20][20];   // [row_i][col_i], [row_i][col_i + 1] -> [0][0], [0][1]
-    int horizontal[20][20]; // [col_i][row_i], [col_i][row_i + 1]
-} GridWalls;
-
 typedef enum {
     // INIT, PAUSE,
     PLAYING,
@@ -138,455 +122,6 @@ void grid_walls_draw_system(int* last_hovered_wall) {
 }
 
 typedef struct {
-    int x;
-    int y;
-} Cell;
-
-typedef struct {
-    int x;
-    int y;
-} CellVector;
-
-typedef enum {
-    NONE, UP, DOWN, RIGHT, LEFT
-} Movement;
-
-Movement movement_negate(Movement move) {
-    switch (move) {
-        case NONE:
-            return NONE;
-        case UP:
-            return DOWN;
-        case DOWN:
-            return UP;
-        case RIGHT:
-            return LEFT;
-        case LEFT:
-            return RIGHT;
-    }
-}
-
-CellVector get_movement_direction(Movement move) {
-    switch (move) {
-        case NONE:
-            return (CellVector) { .x = 0.0, .y = 0.0 };
-        case UP:
-            return (CellVector) { .x = 0.0, .y = -1.0 };
-        case DOWN:
-            return (CellVector) { .x = 0.0, .y = 1.0 };
-        case RIGHT:
-            return (CellVector) { .x = 1.0, .y = 0.0 };
-        case LEFT:
-            return (CellVector) { .x = -1.0, .y = 0.0 };
-    }
-}
-
-int cell_equals(Cell this, Cell other) {
-    return (this.x == other.x) && (this.y == other.y);
-}
-
-Cell cell_add_wrapping(Cell cell, CellVector add) {
-    return (Cell) {
-        .x = (cell.x + GRID_DIM.COLS + add.x) % GRID_DIM.COLS,
-        .y = (cell.y + GRID_DIM.ROWS + add.y) % GRID_DIM.ROWS,
-    };
-}
-
-typedef struct {
-    Cell head;
-    int tail_len;
-    Cell tail[400]; // TODO: into dynamic array
-    Cell tail_drag;
-    Movement momentum;
-    Color head_color;
-    Color head_color_gameover_cycle;
-    Color tail_color;
-} Snake;
-
-Snake new_snake(Cell head, Movement momentum) {
-    return (Snake) {
-        .head = head,
-        .tail_len = 0,
-        .tail = {0},
-        .tail_drag = {0},
-        .momentum = momentum,
-        .head_color = GREEN,
-        .head_color_gameover_cycle = RED,
-        .tail_color = DARKGREEN,
-    };
-}
-
-int snake_len(Snake* snake) {
-    return snake->tail_len + 1;
-}
-
-bool move_snake(Snake* snake, CellVector move) {
-    int row = snake->head.y;
-    int wall_v = snake->head.x + __max(move.x, 0);
-
-    int col = snake->head.x;
-    int wall_h = snake->head.y + __max(move.y, 0);
-
-    if (move.x != 0 && GRID_WALLS.vertical[row][wall_v]) {
-        return false;
-    }
-    if (move.y != 0 && GRID_WALLS.horizontal[col][wall_h]) {
-        return false;
-    }
-
-    // if (GRID_WALLS.vertical[row][wall_v] || GRID_WALLS.horizontal[col][wall_h]) {
-    //     printf("snake   : %d, %d\n", row, col);
-    //     printf("move    : %d, %d\n", move.y, move.x);
-    //     printf("wall_v  : %d\n", wall_v);
-    //     printf("wall_h  : %d\n", wall_h);
-    //     printf("v_wall  : %d\n", GRID_WALLS.vertical[row][wall_v]);
-    //     printf("h_wall  : %d\n", GRID_WALLS.horizontal[col][wall_h]);
-    //     return false;
-    // }
-
-    Cell follow = snake->head;
-    snake->head = cell_add_wrapping(snake->head, move);
-    for (int tail_i = 0; tail_i < snake->tail_len; tail_i++) {
-        Cell follow_temp = snake->tail[tail_i];
-        snake->tail[tail_i] = follow;
-        follow = follow_temp;
-    }
-    snake->tail_drag = follow;
-    return true;
-}
-
-void eat_food(Snake* snake) {
-    snake->tail[snake->tail_len] = snake->tail_drag;
-    snake->tail_len++;
-}
-
-int does_intersect(Snake* snake) {
-    for (int tail_i = 0; tail_i < snake->tail_len; tail_i++) {
-        if (cell_equals(snake->head, snake->tail[tail_i])) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-int occupies_cell(Snake* snake, Cell cell) {
-    if (cell_equals(cell, snake->head)) {
-        return 1;
-    }
-    for (int tail_i = 0; tail_i < snake->tail_len; tail_i++) {
-        if (cell_equals(cell, snake->tail[tail_i])) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-Cell spawn_food(Snake* snake) {
-    Cell food_cell;
-    do {
-        food_cell = (Cell) {
-            .x = rand() % GRID_DIM.COLS,
-            .y = rand() % GRID_DIM.ROWS,
-        };
-    } while(occupies_cell(snake, food_cell));
-    return food_cell;
-}
-
-void snake_draw_system(Snake* snake, int head_gameover_cycle) {
-    for (int tail_i = 0; tail_i < snake->tail_len; tail_i++) {
-        Cell snake_tail = snake->tail[tail_i];
-        float tail_size = (float)GRID.CONTENT_CELL_SIZE * 0.7;
-        float tail_margin = (GRID.CONTENT_CELL_SIZE - tail_size)/2.0;
-        Rectangle snake_tail_content = {
-            .x = snake_tail.x * GRID.CELL_SIZE + tail_margin + GRID.CONTENT_MARGIN,
-            .y = snake_tail.y * GRID.CELL_SIZE + tail_margin + GRID.CONTENT_MARGIN,
-            .width = tail_size,
-            .height = tail_size,
-        };
-        DrawRectangleRec(snake_tail_content, snake->tail_color);
-    }
-    
-    Rectangle snake_head_content = {
-        .x = snake->head.x * GRID.CELL_SIZE + GRID.CONTENT_MARGIN,
-        .y = snake->head.y * GRID.CELL_SIZE + GRID.CONTENT_MARGIN,
-        .width = GRID.CONTENT_CELL_SIZE,
-        .height = GRID.CONTENT_CELL_SIZE,
-    };
-    Color snake_head_color = (head_gameover_cycle == 0)
-                            ? snake->head_color
-                            : snake->head_color_gameover_cycle;
-    DrawRectangleRec(snake_head_content, snake_head_color);
-}
-
-typedef struct {
-    Vector2 position;
-    Vector2 velocity;
-    float rotation;
-    float spawn_scale;
-    float scale;
-} FireworkParticle;
-
-typedef struct {
-    Vector2 origin;
-
-    float spawn_radius_min;
-    float spawn_radius_max;
-    float start_angle;
-    float end_angle;
-    float angle_increment;
-    float particles_per_angle; // > 1
-
-    float particle_speed;
-    float particle_ttl;
-    float particle_spawn_size;
-
-    Color particle_color;
-
-    // TODO: Init array with size and do not free/alloc each time
-    FireworkParticle* particles;
-    int particle_count;
-    float particle_lifetime;
-} Fireworks;
-
-void despawn_fireworks(Fireworks* fireworks) {
-    if (fireworks->particle_count > 0) {
-        free(fireworks->particles);
-        fireworks->particle_count = 0;
-    }
-}
-
-void spawn_fireworks(Fireworks* fireworks) {
-        const Vector2 unit_x = { 1.0, 0.0 };
-        const Vector3 unit_x_v3 = { 1.0, 0.0, 0.0 };
-        const float TWO_PI = 2.0*PI;
-        const float START_ANGLE = fireworks->start_angle;
-        const float END_ANGLE = fireworks->end_angle;
-        const float ANGLE_INCREMENT = fireworks->angle_increment;
-        const float PARTICLES_PER_ANGLE = fireworks->particles_per_angle; // > 1
-        // const float ANGLE_INCREMENT = PI/40.0;
-
-        const float radius_gap = fireworks->spawn_radius_max - fireworks->spawn_radius_min;
-        const float radius_increment = radius_gap / (PARTICLES_PER_ANGLE-1);
-
-        // const int ANGLE_COUNT = (int)(TWO_PI/ANGLE_INCREMENT) + 1;
-        const int ANGLE_COUNT = (int)((END_ANGLE - START_ANGLE)/ANGLE_INCREMENT) + 1;
-        int particle_count = 0;
-        int capacity = 10 + ANGLE_COUNT * PARTICLES_PER_ANGLE * sizeof(FireworkParticle);
-        FireworkParticle* particles = malloc(capacity);
-
-        float angle = START_ANGLE;
-        for (int i = 0; i < ANGLE_COUNT; i++, angle += ANGLE_INCREMENT) {
-            Vector2 direction = Vector2Rotate(unit_x, -angle);
-            for (int j = 0; j < PARTICLES_PER_ANGLE; j++) {
-                float radius_factor = j * radius_increment;
-                float position_factor = fireworks->spawn_radius_min + radius_factor;
-                // TODO: add randomness to position
-                Vector2 position = Vector2Add(fireworks->origin, Vector2Scale(direction, position_factor));
-                
-                int speed_factor = (int)fireworks->particle_speed;
-                float velocity_factor = (float)rand_in_range(speed_factor*2, speed_factor*4);
-                Vector2 velocity = Vector2Scale(
-                    Vector2Normalize(Vector2Subtract(position, fireworks->origin)),
-                    velocity_factor + radius_factor
-                );
-                
-                float rotation = (float)(rand()%360 + 1);
-
-                particles[particle_count] = (FireworkParticle) {
-                    .position = position,
-                    .velocity = velocity,
-                    .rotation = rotation,
-                    .spawn_scale = fireworks->particle_spawn_size,
-                    .scale = fireworks->particle_spawn_size,
-                };
-                particle_count++;
-            }
-        }
-
-        fireworks->particles = particles;
-        fireworks->particle_count = particle_count;
-        fireworks->particle_lifetime = fireworks->particle_ttl;
-}
-
-void update_particle(FireworkParticle* particle, float lifetime_ratio, float delta_time) {
-    const Vector2 GRAVITY = { .x = 0.0, .y = 900.0 };
-    const float DRAG_COEFF = 1.0 / 10.0;
-    const Vector2 neg_velocity_norm = Vector2Normalize(Vector2Negate(particle->velocity));
-    const float v_len = Vector2Length(particle->velocity);
-    const float v_sq = v_len; // * v_len;
-    
-    const Vector2 AIR_DRAG = Vector2Scale(
-        neg_velocity_norm,
-        DRAG_COEFF * (v_sq/2) * particle->scale
-    );
-    Vector2 accelaration = Vector2Add(AIR_DRAG, GRAVITY);
-
-    particle->velocity = Vector2Add(
-        particle->velocity,
-        Vector2Scale(accelaration, delta_time)
-    );
-    particle->position = Vector2Add(
-        particle->position,
-        Vector2Scale(particle->velocity, delta_time)
-    );
-    particle->rotation += delta_time * 360.0;
-    particle->scale = particle->spawn_scale * lifetime_ratio;
-}
-
-void update_particles(Fireworks* fireworks, float delta_time) {
-    if (fireworks->particle_count == 0) {
-        return;
-    }
-
-    fireworks->particle_lifetime -= delta_time;
-    if (fireworks->particle_lifetime <= 0) {
-        despawn_fireworks(fireworks);
-        return;
-    }
-    
-    float lifetime_ratio = fireworks->particle_lifetime / fireworks->particle_ttl;
-    for (int p = 0; p < fireworks->particle_count; p++) {
-        update_particle(&fireworks->particles[p], lifetime_ratio, delta_time);
-    }
-}
-
-typedef struct {
-    bool fireworks_started;
-    Fireworks* fireworks;
-    int fireworks_count;
-    int fireworks_index;
-    SequenceTimer fireworks_timer;
-} FireworksResources;
-
-FireworksResources FIREWORKS_WINSCREEN;
-
-void init_fireworks() {
-    Fireworks fireworks_1 = {
-        // .origin = Vector2Zero(),
-        // .origin = (Vector2) {
-        //     .x = 5.0,
-        //     .y = 5.0,
-        // },
-        .origin = (Vector2) {
-            .x = (GRID.CELL_SIZE * GRID_DIM.COLS)/2.0,
-            .y = (GRID.CELL_SIZE * (GRID_DIM.ROWS + 10))/2.0,
-        },
-        .spawn_radius_max = 50.0,
-        .spawn_radius_min = 10.0,
-        .start_angle = PI/4.0,
-        .end_angle = 3*PI/4.0,
-        .angle_increment = PI/40,
-        .particles_per_angle = 10,
-
-        .particle_speed = 400.0,
-        .particle_ttl = 2.0,
-        .particle_spawn_size = 20.0,
-
-        .particle_color = RED,
-    };
-
-    Fireworks fireworks_2 = fireworks_1;
-    fireworks_2.origin = (Vector2) {
-        .x = (GRID.CELL_SIZE * (GRID_DIM.COLS + 6))/2.0,
-        .y = (GRID.CELL_SIZE * (GRID_DIM.ROWS + 16))/2.0,
-    };
-    fireworks_2.particle_speed = 700.0;
-    fireworks_2.particle_spawn_size = 30.0;
-    fireworks_2.particle_color = BLUE;
-
-    Fireworks fireworks_3 = fireworks_1;
-    fireworks_3.origin = (Vector2) {
-        .x = (GRID.CELL_SIZE * (GRID_DIM.COLS - 6))/2.0,
-        .y = (GRID.CELL_SIZE * (GRID_DIM.ROWS + 26))/2.0,
-    };
-    fireworks_3.particle_speed = 700.0;
-    fireworks_3.particle_ttl = 4.0;
-    fireworks_3.particle_color = MAGENTA;
-
-    int sequence_len = 4;
-    float sq[4] = { 0.5, 1.2, 1.5, 3.0 };
-    float* sequence = malloc(sequence_len * sizeof(float));
-    memcpy(sequence, &sq, sequence_len * sizeof(float));
-    SequenceTimer fireworks_timer = new_sequence_timer(sequence, sequence_len);
-
-    const int fireworks_count = 3;
-    FIREWORKS_WINSCREEN = (FireworksResources) {
-        .fireworks_started = false,
-        .fireworks = malloc(fireworks_count * sizeof(Fireworks)),
-        .fireworks_count = fireworks_count,
-        .fireworks_index = 0,
-        .fireworks_timer = fireworks_timer,
-    };
-    FIREWORKS_WINSCREEN.fireworks[0] = fireworks_1;
-    FIREWORKS_WINSCREEN.fireworks[1] = fireworks_2;
-    FIREWORKS_WINSCREEN.fireworks[2] = fireworks_3;
-}
-
-void check_fireworks_started_system(
-    FireworksResources* fireworks_resources
-) {
-    if (IsKeyPressed(KEY_SPACE)) {
-        fireworks_resources->fireworks_started = true;
-    }
-}
-
-void fireworks_update_system(
-    float delta_time,
-    FireworksResources* fireworks_resources
-) {
-    bool fireworks_started = fireworks_resources->fireworks_started;
-    Fireworks* fireworks_ref = fireworks_resources->fireworks;
-    int fireworks_count = fireworks_resources->fireworks_count;
-    int* fireworks_index_ref = &fireworks_resources->fireworks_index;
-    SequenceTimer* fireworks_timer_ref = &fireworks_resources->fireworks_timer;
-
-    for (int i = 0; i < fireworks_count; i++) {
-        update_particles(&fireworks_ref[i], delta_time);
-    }
-
-    if (fireworks_started) {
-        tick_sequence_timer(fireworks_timer_ref, delta_time);
-        // printf("%f -> %d -> %d\n", fireworks_timer.time_elapsed, fireworks_timer.index, fireworks_timer.pulsed);
-        if (sequence_timer_has_pulsed(fireworks_timer_ref)) {
-            Fireworks* fireworks_i = &fireworks_ref[*fireworks_index_ref];
-            despawn_fireworks(fireworks_i);
-            spawn_fireworks(fireworks_i);
-
-            *fireworks_index_ref = (*fireworks_index_ref + 1) % fireworks_count;
-        }
-    }
-}
-
-void fireworks_draw_system(
-    FireworksResources* fireworks_resources
-) {
-    Fireworks* fireworks = fireworks_resources->fireworks;
-    int fireworks_count = fireworks_resources->fireworks_count;
-    for (int f_i = 0; f_i < fireworks_count; f_i++) {
-        Fireworks* fireworks_i = &fireworks[f_i];
-        for (int p_i = 0; p_i < fireworks_i->particle_count; p_i++) {
-            FireworkParticle particle = fireworks_i->particles[p_i];
-            // TODO: animate size, rotation and color alpha
-            float particle_size = particle.scale;
-            Color particle_color = fireworks_i->particle_color;
-
-            Rectangle particle_rect = {
-                .x = particle.position.x - particle_size/2,
-                .y = particle.position.y - particle_size/2,
-                .width = particle_size,
-                .height = particle_size,
-            };
-            DrawRectanglePro(
-                particle_rect,
-                (Vector2){ particle_rect.width/2.0, particle_rect.height/2.0 },
-                particle.rotation,
-                particle_color
-            );
-        }
-    }
-}
-
-typedef struct {
     int rows;
     int cols;
     Cell snake_entry_cell;
@@ -665,50 +200,68 @@ void mock_win_by_space_press_system() {
     }
 }
 
-typedef struct {
-    int id;
-    char title[21];
-    char input[21];
-    Vector2 position;
-    Vector2 size;
-    Color color;
-    bool disabled;
-} TextInput;
+FireworksResources FIREWORKS_WINSCREEN;
 
-void TextInput_input(TextInput* text_input, char input) {
-    int len = strlen(text_input->input);
-    if (len < 21 - 1) { // at least one '\0' slot
-        text_input->input[len] = input;
-        text_input->input[len+1] = '\0';
-    }
-}
+void init_fireworks() {
+    Fireworks fireworks_1 = {
+        // .origin = Vector2Zero(),
+        // .origin = (Vector2) {
+        //     .x = 5.0,
+        //     .y = 5.0,
+        // },
+        .origin = (Vector2) {
+            .x = (GRID.CELL_SIZE * GRID_DIM.COLS)/2.0,
+            .y = (GRID.CELL_SIZE * (GRID_DIM.ROWS + 10))/2.0,
+        },
+        .spawn_radius_max = 50.0,
+        .spawn_radius_min = 10.0,
+        .start_angle = PI/4.0,
+        .end_angle = 3*PI/4.0,
+        .angle_increment = PI/40,
+        .particles_per_angle = 10,
 
-void TextInput_delete_back(TextInput* text_input) {
-    int len = strlen(text_input->input);
-    if (len > 0) {
-        text_input->input[len-1] = '\0';
-    }
-}
+        .particle_speed = 400.0,
+        .particle_ttl = 2.0,
+        .particle_spawn_size = 20.0,
 
-bool TextInput_hovered(TextInput* text_input) {
-    Vector2 mouse = GetMousePosition();
-    return text_input->position.x <= mouse.x && mouse.x <= text_input->position.x + text_input->size.x
-        && text_input->position.y <= mouse.y && mouse.y <= text_input->position.y + text_input->size.y;
-}
+        .particle_color = RED,
+    };
 
-typedef struct {
-    int id;
-    char title[20];
-    Vector2 position;
-    Vector2 size;
-    Color color;
-    bool disabled;
-} Button;
+    Fireworks fireworks_2 = fireworks_1;
+    fireworks_2.origin = (Vector2) {
+        .x = (GRID.CELL_SIZE * (GRID_DIM.COLS + 6))/2.0,
+        .y = (GRID.CELL_SIZE * (GRID_DIM.ROWS + 16))/2.0,
+    };
+    fireworks_2.particle_speed = 700.0;
+    fireworks_2.particle_spawn_size = 30.0;
+    fireworks_2.particle_color = BLUE;
 
-bool Button_hovered(Button* button) {
-    Vector2 mouse = GetMousePosition();
-    return button->position.x <= mouse.x && mouse.x <= button->position.x + button->size.x
-        && button->position.y <= mouse.y && mouse.y <= button->position.y + button->size.y;
+    Fireworks fireworks_3 = fireworks_1;
+    fireworks_3.origin = (Vector2) {
+        .x = (GRID.CELL_SIZE * (GRID_DIM.COLS - 6))/2.0,
+        .y = (GRID.CELL_SIZE * (GRID_DIM.ROWS + 26))/2.0,
+    };
+    fireworks_3.particle_speed = 700.0;
+    fireworks_3.particle_ttl = 4.0;
+    fireworks_3.particle_color = MAGENTA;
+
+    int sequence_len = 4;
+    float sq[4] = { 0.5, 1.2, 1.5, 3.0 };
+    float* sequence = malloc(sequence_len * sizeof(float));
+    memcpy(sequence, &sq, sequence_len * sizeof(float));
+    SequenceTimer fireworks_timer = new_sequence_timer(sequence, sequence_len);
+
+    const int fireworks_count = 3;
+    FIREWORKS_WINSCREEN = (FireworksResources) {
+        .fireworks_started = false,
+        .fireworks = malloc(fireworks_count * sizeof(Fireworks)),
+        .fireworks_count = fireworks_count,
+        .fireworks_index = 0,
+        .fireworks_timer = fireworks_timer,
+    };
+    FIREWORKS_WINSCREEN.fireworks[0] = fireworks_1;
+    FIREWORKS_WINSCREEN.fireworks[1] = fireworks_2;
+    FIREWORKS_WINSCREEN.fireworks[2] = fireworks_3;
 }
 
 void edit_level(GameLevel* level) {

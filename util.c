@@ -2,6 +2,8 @@
 #include "stdio.h"
 #include "stdbool.h"
 
+#include "util.h"
+
 int rand_in_range(int l, int r) {
     return l + (rand() % (r - l + 1));
 }
@@ -12,18 +14,6 @@ float rand_float_discrete(int l, int r, int point_step) {
     float fl = fac / (float)point_step;
     return base + fl;
 }
-
-typedef enum {
-    Timer_NonRepeating,
-    Timer_Repeating,
-} TimerMode;
-
-typedef struct {
-    TimerMode mode;
-    float time_setup;
-    float time_elapsed;
-    bool finished;
-} Timer;
 
 Timer new_timer(float setup_secs, TimerMode mode) {
     return (Timer) {
@@ -66,14 +56,6 @@ bool timer_is_finished(Timer* timer) {
         return false;
     }
 }
-
-typedef struct {
-    int checkpoint_count;
-    int index;
-    float* checkpoints;
-    float time_elapsed;
-    bool pulsed;
-} SequenceTimer;
 
 SequenceTimer new_sequence_timer(float* checkpoints, int count) {
     printf("ch[0]: %0.2f\n", checkpoints[0]);

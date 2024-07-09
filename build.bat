@@ -10,7 +10,7 @@ set LINK=-lraylib -lgdi32 -lwinmm
 
 set TARGET_DIR=target
 set OUTPUT=game
-set COMPILE=main.c
+set COMPILE=main.c grid.c util.c gameui.c snake.c fireworks.c
 
 mkdir %TARGET_DIR%
 
