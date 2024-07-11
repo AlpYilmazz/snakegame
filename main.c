@@ -10,6 +10,7 @@
 
 #include "grid.h"
 #include "level.h"
+#include "asset.h"
 #include "gameui.h"
 #include "snake.h"
 #include "fireworks.h"
@@ -965,6 +966,31 @@ int main() {
 
     GameLevel level_0 = load_level(0);
 
+    TextureAssets texture_assets = new_texture_assets();
+    TextureHandle texture_handle = reserve_texture_slot(&texture_assets);
+    Texture texture = LoadTexture("./snake-head.png");
+    put_texture(&texture_assets, texture_handle, texture);
+
+    float texture_size = button_size.x;
+    Rectangle texture_src_rect = {
+        .x = (texture.width - 530)/2,
+        .y = (texture.height - 530)/2,
+        .width = 530,
+        .height = 530,
+    };
+    Rectangle texture_dist_rect_1 = {
+        .x = buttons[1].position.x - 3*button_margin_y - texture_size,
+        .y = buttons[1].position.y + buttons[1].size.y/2 - texture_size/2,
+        .width = texture_size,
+        .height = texture_size,
+    };
+    Rectangle texture_dist_rect_2 = {
+        .x = buttons[1].position.x + buttons[1].size.x + 3*button_margin_y,
+        .y = texture_dist_rect_1.y,
+        .width = texture_dist_rect_1.width,
+        .height = texture_dist_rect_1.height,
+    };
+
     bool window_should_close = false;
     while (!window_should_close && !WindowShouldClose()) {
         int hovered_button_id = -1;
@@ -996,6 +1022,25 @@ int main() {
         // -- DRAW --
         BeginDrawing();
         ClearBackground(BLACK);
+
+        Texture* texture_res = get_texture_unchecked(&texture_assets, texture_handle);
+        // DrawTexture(*texture_res, 0, 0, WHITE);
+        DrawTexturePro(
+            *texture_res,
+            texture_src_rect,
+            texture_dist_rect_1,
+            (Vector2) {0, 0},
+            0,
+            WHITE
+        );
+        DrawTexturePro(
+            *texture_res,
+            texture_src_rect,
+            texture_dist_rect_2,
+            (Vector2) {0, 0},
+            0,
+            WHITE
+        );
 
         for (int i = 0; i < button_count; i++) {
             Button* button = &buttons[i];
