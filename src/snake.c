@@ -1,10 +1,10 @@
-#include "stdbool.h"
+#include <stdbool.h>
 
 #include "raylib.h"
 #include "raymath.h"
 
-#include "grid.h"
 #include "util.h"
+#include "grid.h"
 
 #include "snake.h"
 

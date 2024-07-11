@@ -1,7 +1,7 @@
 #ifndef SNAKEGAME_ASSET
 #define SNAKEGAME_ASSET
 
-#include "stdbool.h"
+#include <stdbool.h>
 
 #include "raylib.h"
 

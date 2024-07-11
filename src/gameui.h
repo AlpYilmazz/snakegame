@@ -1,7 +1,7 @@
 #ifndef SNAKEGAME_GAMEUI
 #define SNAKEGAME_GAMEUI
 
-#include "stdbool.h"
+#include <stdbool.h>
 
 #include "raylib.h"
 #include "raymath.h"

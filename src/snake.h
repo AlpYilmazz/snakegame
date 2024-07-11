@@ -1,8 +1,8 @@
 #ifndef SNAKEGAME_SNAKE
 #define SNAKEGAME_SNAKE
 
-#include "stdlib.h"
-#include "stdbool.h"
+#include <stdlib.h>
+#include <stdbool.h>
 
 #include "raylib.h"
 

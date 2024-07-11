@@ -1,11 +1,12 @@
-#include "stdlib.h"
-#include "stdbool.h"
+#include <stdlib.h>
+#include <stdbool.h>
 
 #include "raylib.h"
 #include "raymath.h"
 
-#include "grid.h"
 #include "util.h"
+#include "grid.h"
+#include "animation.h"
 
 #include "fireworks.h"
 

@@ -1,12 +1,12 @@
 #ifndef SNAKEGAME_FIREWORKS
 #define SNAKEGAME_FIREWORK
 
-#include "stdbool.h"
+#include <stdbool.h>
 
 #include "raylib.h"
 #include "raymath.h"
 
-#include "util.h"
+#include "animation.h"
 
 typedef struct {
     Vector2 position;

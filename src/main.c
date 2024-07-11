@@ -1,20 +1,21 @@
-#include "stdlib.h"
-#include "stdio.h"
-#include "stdbool.h"
-#include "time.h"
-#include "string.h"
+#include <stdlib.h>
+#include <stdio.h>
+#include <stdbool.h>
+#include <time.h>
+#include <string.h>
 
 #include "raylib.h"
 #include "rlgl.h"
 #include "raymath.h"
 
+#include "util.h"
 #include "grid.h"
 #include "level.h"
 #include "asset.h"
+#include "animation.h"
 #include "gameui.h"
 #include "snake.h"
 #include "fireworks.h"
-#include "util.h"
 
 // -- GLOBAL VARIABLE TYPES -----
 typedef enum {

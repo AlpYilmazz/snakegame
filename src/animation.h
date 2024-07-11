@@ -1,10 +1,5 @@
-#ifndef SNAKEGAME_UTIL
-#define SNAKEGAME_UTIL
-
-#include "stdbool.h"
-
-int rand_in_range(int l, int r);
-float rand_float_discrete(int l, int r, int point_step);
+#ifndef SNAKEGAME_ANIMATION
+#define SNAKEGAME_ANIMATION
 
 typedef enum {
     Timer_NonRepeating,
