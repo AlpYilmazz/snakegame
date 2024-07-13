@@ -1,5 +1,8 @@
+// #include <windows.h>
 #include <stdio.h>
 #include <stdbool.h>
+
+#include "asset.h"
 
 #include "animation.h"
 
@@ -76,4 +79,85 @@ bool sequence_timer_has_pulsed(SequenceTimer* stimer) {
         return true;
     }
     return false;
+}
+
+// void TextureList_push_back(TextureList* list, Texture item) {
+//     #define INITIAL_CAPACITY 10
+//     #define CAPACITY_GROWTH_FACTOR 2
+    
+//     if (list->capacity == 0) {
+//         list->capacity = INITIAL_CAPACITY;
+//         list->items = malloc(INITIAL_CAPACITY * sizeof(*&item));
+//     }
+//     else if (list->count == list->capacity) {
+//         int new_capacity = CAPACITY_GROWTH_FACTOR * list->capacity;
+//         list->items = realloc(list->items, new_capacity * sizeof(*&item));
+//     }
+
+//     list->items[list->count] = item;
+//     list->count++;
+
+//     #undef INITIAL_CAPACITY
+//     #undef CAPACITY_GROWTH_FACTOR
+// }
+
+// TextureList load_texture_directory(const char* dir) {
+//     TextureList texture_list = (TextureList) {0};
+
+//     WIN32_FIND_DATA file_find_data;
+//     HANDLE file_handle = NULL;
+//     char path_spec[2048];
+
+//     sprintf(path_spec, "%s\\*.png", dir);
+
+//     if((file_handle = FindFirstFile(path_spec, &file_find_data)) == INVALID_HANDLE_VALUE) {
+//         printf("Path not found: [%s]\n", dir);
+//         return texture_list; // success := 0 (false)
+//     }
+
+//     do {
+//         //Find first file will always return "."
+//         //    and ".." as the first two directories.
+//         if(strcmp(file_find_data.cFileName, ".") == 0 || strcmp(file_find_data.cFileName, "..") == 0) {
+//             continue;
+//         }
+//         //Build up our file path using the passed in
+//         //  [sDir] and the file/foldername we just found:
+//         sprintf(path_spec, "%s\\%s", dir, file_find_data.cFileName);
+
+//         //Is the entity a File or Folder?
+//         if(file_find_data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+//             printf("Directory: %s\n", path_spec);
+//         }
+//         else {
+//             printf("File: %s\n", path_spec);
+//             TextureList_push_back(&texture_list, LoadTexture(path_spec));
+//         }
+//     } while(FindNextFile(file_handle, &file_find_data)); //Find the next file.
+
+//     FindClose(file_handle);
+
+//     texture_list.success = true;
+//     return texture_list;
+// }
+
+SpriteAnimation new_sprite_animation(SequenceTimer timer, TextureHandle* textures, int texture_count) {
+    return (SpriteAnimation) {
+        .timer = timer,
+        .textures = textures,
+        .texture_count = texture_count,
+        .current_texture_ind = 0,
+    };
+}
+
+void tick_animation_timer(SpriteAnimation* anim, float delta_time_seconds) {
+    tick_sequence_timer(&anim->timer, delta_time_seconds);
+    if (sequence_timer_has_pulsed(&anim->timer)) {
+        anim->current_texture_ind++;
+        anim->current_texture_ind %= anim->texture_count;
+    }
+}
+
+TextureHandle get_current_texture(SpriteAnimation* anim) {
+    return anim->textures[anim->current_texture_ind];
 }

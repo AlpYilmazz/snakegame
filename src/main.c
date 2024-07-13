@@ -9,6 +9,7 @@
 #include "raymath.h"
 
 #include "util.h"
+#include "asyncio.h"
 #include "grid.h"
 #include "level.h"
 #include "asset.h"
@@ -911,8 +912,31 @@ void play_level(const GameLevel const* level) {
     }
 }
 
+double time_elapsed_ns(struct timespec tstart, struct timespec tend) {
+    return ((double)tend.tv_sec + 1.0e-9*tend.tv_nsec) - 
+           ((double)tstart.tv_sec + 1.0e-9*tstart.tv_nsec);
+}
+
 int main() {
     srand(time(NULL));
+
+    ThreadPool* thread_pool = thread_pool_create(1, 100);
+    
+    int* task_arg = malloc(sizeof(int));
+    *task_arg = 523432;
+    printf("Expected function ptr 1: %p\n", example_async_task_print_int_arg);
+    printf("Expected function ptr 2: %p\n", &example_async_task_print_int_arg);
+    Task task = {
+        .handler = example_async_task_print_int_arg,
+        .arg = task_arg,
+    };
+    thread_pool_add_task(thread_pool, task);
+
+    getchar();
+
+    thread_pool_shutdown(thread_pool, THREADPOOL_GRACEFULL_SHUTDOWN);
+
+    return 0;
 
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Snake Game");
     
@@ -968,9 +992,81 @@ int main() {
     GameLevel level_0 = load_level(0);
 
     TextureAssets texture_assets = new_texture_assets();
+
     TextureHandle texture_handle = reserve_texture_slot(&texture_assets);
-    Texture texture = LoadTexture("./snake-head.png");
+    Texture texture = LoadTexture("asset/snake-head.png");
     put_texture(&texture_assets, texture_handle, texture);
+
+    StringList explosion_files = list_files_in_directory("asset\\explosion");
+    // for (int i = 0; i < explosion_files.count; i++) {
+    //     printf("%s\n", explosion_files.items[i]);
+    // }
+
+    // LoadDirectoryFilesEx
+
+    GenericData filedata[100] = {0};
+    Image _images[100] = {0};
+    Texture _textures[100] = {0};
+
+    struct timespec time_start;
+    timespec_get(&time_start, TIME_UTC);
+    for (int i = 0; i < explosion_files.count; i++) {
+        filedata[i] = read_file_data(explosion_files.items[i]);
+    }
+    struct timespec time_elapsed_read_file;
+    timespec_get(&time_elapsed_read_file, TIME_UTC);
+    double t1 = time_elapsed_ns(time_start, time_elapsed_read_file);
+
+    for (int i = 0; i < explosion_files.count; i++) {
+        printf("file: %s, size: %d\n", explosion_files.items[i], filedata[i].size_in_bytes);
+        _images[i] = LoadImageFromMemory(".png", filedata[i].data, filedata[i].size_in_bytes);
+    }
+    struct timespec time_elapsed_load_image;
+    timespec_get(&time_elapsed_load_image, TIME_UTC);
+    double t2 = time_elapsed_ns(time_elapsed_read_file, time_elapsed_load_image);
+
+    for (int i = 0; i < explosion_files.count; i++) {
+        _textures[i] = LoadTextureFromImage(_images[i]);
+    }
+    struct timespec time_elapsed_load_texture;
+    timespec_get(&time_elapsed_load_texture, TIME_UTC);
+    double t3 = time_elapsed_ns(time_elapsed_load_image, time_elapsed_load_texture);
+
+    printf("time_elapsed_read_file: %0.10f\n", t1);
+    printf("time_elapsed_load_image: %0.10f\n", t2);
+    printf("time_elapsed_load_texture: %0.10f\n", t3);
+
+    // const int explosion_animation_frame_count = 9;
+    // const char* explosion_anim_texture_files[9] = {
+    //     "asset/explosion/use/frame_00_delay-0.03s.png",
+    //     "asset/explosion/use/frame_02_delay-0.03s.png",
+    //     "asset/explosion/use/frame_06_delay-0.03s.png",
+    //     "asset/explosion/use/frame_15_delay-0.03s.png",
+    //     "asset/explosion/use/frame_21_delay-0.03s.png",
+    //     "asset/explosion/use/frame_40_delay-0.03s.png",
+    //     "asset/explosion/use/frame_53_delay-0.03s.png",
+    //     "asset/explosion/use/frame_60_delay-0.03s.png",
+    //     "asset/explosion/use/frame_70_delay-0.03s.png",
+    // };
+
+    TextureHandle* texture_handles = malloc(explosion_files.count * sizeof(TextureHandle));
+    float* animation_checkpoints = malloc(explosion_files.count * sizeof(float));
+    for (int i = 0; i < explosion_files.count; i++) {
+        TextureHandle texture_handle = reserve_texture_slot(&texture_assets);
+        Texture texture = LoadTexture(explosion_files.items[i]);
+        put_texture(&texture_assets, texture_handle, texture);
+        texture_handles[i] = texture_handle;
+        animation_checkpoints[i] = 0.03 * (i+1);
+    }
+
+    SequenceTimer explosion_animation_timer = new_sequence_timer(
+        animation_checkpoints, explosion_files.count
+    );
+    SpriteAnimation explosion_animation = new_sprite_animation(
+        explosion_animation_timer,
+        texture_handles,
+        explosion_files.count
+    );
 
     float texture_size = button_size.x;
     Rectangle texture_src_rect = {
@@ -994,6 +1090,8 @@ int main() {
 
     bool window_should_close = false;
     while (!window_should_close && !WindowShouldClose()) {
+        float delta_time = GetFrameTime();
+
         int hovered_button_id = -1;
         for (int i = 0; i < button_count; i++) {
             if (Button_hovered(&buttons[i])) {
@@ -1020,11 +1118,15 @@ int main() {
             }
         }
 
+        TextureHandle explosion_frame = get_current_texture(&explosion_animation);
+        tick_animation_timer(&explosion_animation, delta_time);
+
         // -- DRAW --
         BeginDrawing();
         ClearBackground(BLACK);
 
         Texture* texture_res = get_texture_unchecked(&texture_assets, texture_handle);
+        Texture* texture_explosion_frame = get_texture_unchecked(&texture_assets, explosion_frame);
         // DrawTexture(*texture_res, 0, 0, WHITE);
         DrawTexturePro(
             *texture_res,
@@ -1034,9 +1136,22 @@ int main() {
             0,
             WHITE
         );
+        // DrawTexturePro(
+        //     *texture_res,
+        //     texture_src_rect,
+        //     texture_dist_rect_2,
+        //     (Vector2) {0, 0},
+        //     0,
+        //     WHITE
+        // );
         DrawTexturePro(
-            *texture_res,
-            texture_src_rect,
+            *texture_explosion_frame,
+            (Rectangle) {
+                .x = 0,
+                .y = 0,
+                .width = texture_explosion_frame->width,
+                .height = texture_explosion_frame->height
+            },
             texture_dist_rect_2,
             (Vector2) {0, 0},
             0,

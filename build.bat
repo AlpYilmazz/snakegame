@@ -12,6 +12,7 @@ set TARGET_DIR=target
 set OUTPUT=game
 set COMPILE=^
     src/util.c ^
+    src/asyncio.c ^
     src/grid.c ^
     src/level.c ^
     src/asset.c ^
@@ -26,5 +27,9 @@ mkdir %TARGET_DIR%
 @echo on
 
 gcc %COMPILE% %COMPILER_FLAGS% %INCLUDE% %LIB% %LINK% -o ./%TARGET_DIR%/%OUTPUT%.exe
+
+@echo off
+
+copy %TARGET_DIR%\%OUTPUT%.exe %OUTPUT%-local.exe
 
 :: gcc main.c -Ivendor/raylib/include -Lvendor/raylib/lib -lraylib -lgdi32 -lwinmm -o target/game.exe
