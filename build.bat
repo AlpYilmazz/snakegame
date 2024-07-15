@@ -3,8 +3,8 @@ SETLOCAL
 
 set COMPILER_FLAGS=
 
-set INCLUDE=-Ivendor/raylib/include -Ivendor/threadpool/include
-set LIB=-Lvendor/raylib/lib -Lvendor/threadpool/lib
+set INCLUDE=-Ivendor/raylib/include -Ilibrary/threadpool/include
+set LIB=-Lvendor/raylib/lib -Llibrary/threadpool/lib
 
 set LINK=^
     -lraylib -lgdi32 -lwinmm ^
