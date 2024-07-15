@@ -3,33 +3,38 @@ SETLOCAL
 
 set COMPILER_FLAGS=
 
-set INCLUDE=-Ivendor/raylib/include
-set LIB=-Lvendor/raylib/lib
+set INCLUDE=-Ivendor/raylib/include -Ivendor/threadpool/include
+set LIB=-Lvendor/raylib/lib -Lvendor/threadpool/lib
 
-set LINK=-lraylib -lgdi32 -lwinmm
+set LINK=^
+    -lraylib -lgdi32 -lwinmm ^
+    -lthreadpool
 
+set SRC_DIR=src
 set TARGET_DIR=target
-set OUTPUT=game
+
+set OUTPUT=game.exe
 set COMPILE=^
-    src/util.c ^
-    src/asyncio.c ^
-    src/grid.c ^
-    src/level.c ^
-    src/asset.c ^
-    src/animation.c ^
-    src/gameui.c ^
-    src/snake.c ^
-    src/fireworks.c ^
-    src/main.c
+    %SRC_DIR%/util.c ^
+    %SRC_DIR%/asyncio.c ^
+    %SRC_DIR%/grid.c ^
+    %SRC_DIR%/level.c ^
+    %SRC_DIR%/asset.c ^
+    %SRC_DIR%/animation.c ^
+    %SRC_DIR%/gameui.c ^
+    %SRC_DIR%/snake.c ^
+    %SRC_DIR%/fireworks.c ^
+    %SRC_DIR%/main.c
 
 mkdir %TARGET_DIR%
 
 @echo on
 
-gcc %COMPILE% %COMPILER_FLAGS% %INCLUDE% %LIB% %LINK% -o ./%TARGET_DIR%/%OUTPUT%.exe
+gcc %COMPILER_FLAGS% %COMPILE% %INCLUDE% %LIB% %LINK% -o ./%TARGET_DIR%/%OUTPUT%
 
 @echo off
 
-copy %TARGET_DIR%\%OUTPUT%.exe %OUTPUT%-local.exe
+set OUTPUT_LOCAL=game-local.exe
+copy %TARGET_DIR%\%OUTPUT% %OUTPUT_LOCAL%
 
 :: gcc main.c -Ivendor/raylib/include -Lvendor/raylib/lib -lraylib -lgdi32 -lwinmm -o target/game.exe

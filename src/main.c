@@ -8,8 +8,10 @@
 #include "rlgl.h"
 #include "raymath.h"
 
+#include "threadpool.h"
+
 #include "util.h"
-#include "asyncio.h"
+// #include "asyncio.h"
 #include "grid.h"
 #include "level.h"
 #include "asset.h"
@@ -920,23 +922,15 @@ double time_elapsed_ns(struct timespec tstart, struct timespec tend) {
 int main() {
     srand(time(NULL));
 
-    ThreadPool* thread_pool = thread_pool_create(1, 100);
+    ThreadPool* thread_pool = thread_pool_create(10, 100);
     
-    int* task_arg = malloc(sizeof(int));
-    *task_arg = 523432;
-    printf("Expected function ptr 1: %p\n", example_async_task_print_int_arg);
-    printf("Expected function ptr 2: %p\n", &example_async_task_print_int_arg);
-    Task task = {
-        .handler = example_async_task_print_int_arg,
-        .arg = task_arg,
-    };
-    thread_pool_add_task(thread_pool, task);
-
-    getchar();
-
-    thread_pool_shutdown(thread_pool, THREADPOOL_GRACEFULL_SHUTDOWN);
-
-    return 0;
+    // int* task_arg = malloc(sizeof(int));
+    // *task_arg = rand_in_range(100, 200);
+    // Task task = {
+    //     .handler = example_async_task_print_int_arg,
+    //     .arg = task_arg,
+    // };
+    // thread_pool_add_task(thread_pool, task);
 
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Snake Game");
     
@@ -1188,6 +1182,8 @@ int main() {
 
         EndDrawing();
     }
+
+    thread_pool_shutdown(thread_pool, THREADPOOL_GRACEFULL_SHUTDOWN);
     
     CloseWindow();
     
