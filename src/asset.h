@@ -11,6 +11,7 @@ typedef struct {
     int id;
 } TextureHandle;
 
+TextureHandle primary_texture_handle();
 TextureHandle new_texture_handle(int id);
 
 typedef struct {

@@ -11,7 +11,7 @@
 #include "threadpool.h"
 
 #include "util.h"
-// #include "asyncio.h"
+#include "asyncio.h"
 #include "grid.h"
 #include "level.h"
 #include "asset.h"
@@ -991,44 +991,44 @@ int main() {
     Texture texture = LoadTexture("asset/snake-head.png");
     put_texture(&texture_assets, texture_handle, texture);
 
-    StringList explosion_files = list_files_in_directory("asset\\explosion");
+    // StringList explosion_files = list_files_in_directory("asset\\explosion");
     // for (int i = 0; i < explosion_files.count; i++) {
     //     printf("%s\n", explosion_files.items[i]);
     // }
 
     // LoadDirectoryFilesEx
 
-    GenericData filedata[100] = {0};
-    Image _images[100] = {0};
-    Texture _textures[100] = {0};
+    // GenericData filedata[100] = {0};
+    // Image _images[100] = {0};
+    // Texture _textures[100] = {0};
 
-    struct timespec time_start;
-    timespec_get(&time_start, TIME_UTC);
-    for (int i = 0; i < explosion_files.count; i++) {
-        filedata[i] = read_file_data(explosion_files.items[i]);
-    }
-    struct timespec time_elapsed_read_file;
-    timespec_get(&time_elapsed_read_file, TIME_UTC);
-    double t1 = time_elapsed_ns(time_start, time_elapsed_read_file);
+    // struct timespec time_start;
+    // timespec_get(&time_start, TIME_UTC);
+    // for (int i = 0; i < explosion_files.count; i++) {
+    //     filedata[i] = read_file_data(explosion_files.items[i]);
+    // }
+    // struct timespec time_elapsed_read_file;
+    // timespec_get(&time_elapsed_read_file, TIME_UTC);
+    // double t1 = time_elapsed_ns(time_start, time_elapsed_read_file);
 
-    for (int i = 0; i < explosion_files.count; i++) {
-        printf("file: %s, size: %d\n", explosion_files.items[i], filedata[i].size_in_bytes);
-        _images[i] = LoadImageFromMemory(".png", filedata[i].data, filedata[i].size_in_bytes);
-    }
-    struct timespec time_elapsed_load_image;
-    timespec_get(&time_elapsed_load_image, TIME_UTC);
-    double t2 = time_elapsed_ns(time_elapsed_read_file, time_elapsed_load_image);
+    // for (int i = 0; i < explosion_files.count; i++) {
+    //     printf("file: %s, size: %d\n", explosion_files.items[i], filedata[i].size_in_bytes);
+    //     _images[i] = LoadImageFromMemory(".png", filedata[i].data, filedata[i].size_in_bytes);
+    // }
+    // struct timespec time_elapsed_load_image;
+    // timespec_get(&time_elapsed_load_image, TIME_UTC);
+    // double t2 = time_elapsed_ns(time_elapsed_read_file, time_elapsed_load_image);
 
-    for (int i = 0; i < explosion_files.count; i++) {
-        _textures[i] = LoadTextureFromImage(_images[i]);
-    }
-    struct timespec time_elapsed_load_texture;
-    timespec_get(&time_elapsed_load_texture, TIME_UTC);
-    double t3 = time_elapsed_ns(time_elapsed_load_image, time_elapsed_load_texture);
+    // for (int i = 0; i < explosion_files.count; i++) {
+    //     _textures[i] = LoadTextureFromImage(_images[i]);
+    // }
+    // struct timespec time_elapsed_load_texture;
+    // timespec_get(&time_elapsed_load_texture, TIME_UTC);
+    // double t3 = time_elapsed_ns(time_elapsed_load_image, time_elapsed_load_texture);
 
-    printf("time_elapsed_read_file: %0.10f\n", t1);
-    printf("time_elapsed_load_image: %0.10f\n", t2);
-    printf("time_elapsed_load_texture: %0.10f\n", t3);
+    // printf("time_elapsed_read_file: %0.10f\n", t1);
+    // printf("time_elapsed_load_image: %0.10f\n", t2);
+    // printf("time_elapsed_load_texture: %0.10f\n", t3);
 
     // const int explosion_animation_frame_count = 9;
     // const char* explosion_anim_texture_files[9] = {
@@ -1043,24 +1043,20 @@ int main() {
     //     "asset/explosion/use/frame_70_delay-0.03s.png",
     // };
 
-    TextureHandle* texture_handles = malloc(explosion_files.count * sizeof(TextureHandle));
-    float* animation_checkpoints = malloc(explosion_files.count * sizeof(float));
-    for (int i = 0; i < explosion_files.count; i++) {
-        TextureHandle texture_handle = reserve_texture_slot(&texture_assets);
-        Texture texture = LoadTexture(explosion_files.items[i]);
-        put_texture(&texture_assets, texture_handle, texture);
-        texture_handles[i] = texture_handle;
-        animation_checkpoints[i] = 0.03 * (i+1);
-    }
+    int explosion_texture_load_completed = 0;
+    int explosion_textures_handle_count = 0;
+    TextureHandle* explosion_textures_handles;
+    AsyncioLoadTextureDir task_arg = {
+        .texture_assets = &texture_assets,
+        .dirpath = "asset/explosion",
+        .completed = &explosion_texture_load_completed,
+        .handle_count = &explosion_textures_handle_count,
+        .handles = explosion_textures_handles,
+    };
+    Task task = get_task_asyncio_load_texture_dir(&task_arg);
+    thread_pool_add_task(thread_pool, task);
 
-    SequenceTimer explosion_animation_timer = new_sequence_timer(
-        animation_checkpoints, explosion_files.count
-    );
-    SpriteAnimation explosion_animation = new_sprite_animation(
-        explosion_animation_timer,
-        texture_handles,
-        explosion_files.count
-    );
+    SpriteAnimation explosion_animation = {0};
 
     float texture_size = button_size.x;
     Rectangle texture_src_rect = {
@@ -1085,6 +1081,22 @@ int main() {
     bool window_should_close = false;
     while (!window_should_close && !WindowShouldClose()) {
         float delta_time = GetFrameTime();
+
+        if (explosion_texture_load_completed) {
+            float* animation_checkpoints = malloc(explosion_textures_handle_count * sizeof(float));
+            for (int i = 0; i < explosion_textures_handle_count; i++) {
+                animation_checkpoints[i] = 0.03 * (i+1);
+            }
+
+            SequenceTimer explosion_animation_timer = new_sequence_timer(
+                animation_checkpoints, explosion_textures_handle_count
+            );
+            explosion_animation = new_sprite_animation(
+                explosion_animation_timer,
+                explosion_textures_handles,
+                explosion_textures_handle_count
+            );
+        }
 
         int hovered_button_id = -1;
         for (int i = 0; i < button_count; i++) {

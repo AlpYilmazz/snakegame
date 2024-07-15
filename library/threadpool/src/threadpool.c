@@ -219,6 +219,7 @@ unsigned int __stdcall thread_pool_worker_thread(void* thread_param) {
         if (task_queue_has_next(&pool->task_queue)) {
             task = task_queue_pop_task_unchecked(&pool->task_queue);
             LeaveCriticalSection(&pool->task_queue_lock);
+            printf(" << Task Execution >> \n");
             task.handler(task.arg);
         }
         else {

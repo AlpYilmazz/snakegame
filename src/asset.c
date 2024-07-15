@@ -5,6 +5,13 @@
 
 #include "asset.h"
 
+const TextureHandle PRIMARY_TEXTURE_HANDLE = {0};
+const unsigned char DEFAULT_IMAGE_DATA[4] = {255, 0, 255, 255};
+
+TextureHandle primary_texture_handle() {
+    return PRIMARY_TEXTURE_HANDLE;
+}
+
 TextureHandle new_texture_handle(int id) {
     return (TextureHandle) { id };
 }
@@ -18,11 +25,24 @@ TextureResponse valid_response(Texture* texture) {
 }
 
 TextureAssets new_texture_assets() {
-    return (TextureAssets) {
+    TextureAssets texture_assets = {
         .textures = {0},
         .slots = {0},
         .next_slot_available_bump = 0,
     };
+
+    Image img = {
+        .data = (void*)&DEFAULT_IMAGE_DATA,
+        .width = 1,
+        .height = 1,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+        .mipmaps = 1
+    };
+    Texture texture = LoadTextureFromImage(img);
+    put_texture(&texture_assets, PRIMARY_TEXTURE_HANDLE, texture);
+    texture_assets.next_slot_available_bump++;
+    
+    return texture_assets;
 }
 
 bool texture_exists(TextureAssets* assets, TextureHandle handle) {

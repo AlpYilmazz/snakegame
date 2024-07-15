@@ -49,7 +49,6 @@ bool timer_is_finished(Timer* timer) {
 }
 
 SequenceTimer new_sequence_timer(float* checkpoints, int count) {
-    printf("ch[0]: %0.2f\n", checkpoints[0]);
     return (SequenceTimer) {
         .checkpoint_count = count,
         .index = 0,
@@ -61,6 +60,8 @@ SequenceTimer new_sequence_timer(float* checkpoints, int count) {
 
 // NOTE: Repeating
 void tick_sequence_timer(SequenceTimer* stimer, float delta_time_seconds) {
+    if (stimer->checkpoint_count == 0) return;
+
     float checkpoint = stimer->checkpoints[stimer->index];
     stimer->time_elapsed += delta_time_seconds;
     if (stimer->time_elapsed >= checkpoint) {
@@ -151,6 +152,8 @@ SpriteAnimation new_sprite_animation(SequenceTimer timer, TextureHandle* texture
 }
 
 void tick_animation_timer(SpriteAnimation* anim, float delta_time_seconds) {
+    if (anim->texture_count == 0) return;
+
     tick_sequence_timer(&anim->timer, delta_time_seconds);
     if (sequence_timer_has_pulsed(&anim->timer)) {
         anim->current_texture_ind++;
@@ -159,5 +162,6 @@ void tick_animation_timer(SpriteAnimation* anim, float delta_time_seconds) {
 }
 
 TextureHandle get_current_texture(SpriteAnimation* anim) {
+    if (anim->texture_count == 0) return primary_texture_handle();
     return anim->textures[anim->current_texture_ind];
 }
