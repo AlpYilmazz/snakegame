@@ -987,71 +987,19 @@ int main() {
 
     TextureAssets texture_assets = new_texture_assets();
 
-    TextureHandle texture_handle = reserve_texture_slot(&texture_assets);
-    Texture texture = LoadTexture("asset/snake-head.png");
-    put_texture(&texture_assets, texture_handle, texture);
-
-    // StringList explosion_files = list_files_in_directory("asset\\explosion");
-    // for (int i = 0; i < explosion_files.count; i++) {
-    //     printf("%s\n", explosion_files.items[i]);
-    // }
-
-    // LoadDirectoryFilesEx
-
-    // GenericData filedata[100] = {0};
-    // Image _images[100] = {0};
-    // Texture _textures[100] = {0};
-
-    // struct timespec time_start;
-    // timespec_get(&time_start, TIME_UTC);
-    // for (int i = 0; i < explosion_files.count; i++) {
-    //     filedata[i] = read_file_data(explosion_files.items[i]);
-    // }
-    // struct timespec time_elapsed_read_file;
-    // timespec_get(&time_elapsed_read_file, TIME_UTC);
-    // double t1 = time_elapsed_ns(time_start, time_elapsed_read_file);
-
-    // for (int i = 0; i < explosion_files.count; i++) {
-    //     printf("file: %s, size: %d\n", explosion_files.items[i], filedata[i].size_in_bytes);
-    //     _images[i] = LoadImageFromMemory(".png", filedata[i].data, filedata[i].size_in_bytes);
-    // }
-    // struct timespec time_elapsed_load_image;
-    // timespec_get(&time_elapsed_load_image, TIME_UTC);
-    // double t2 = time_elapsed_ns(time_elapsed_read_file, time_elapsed_load_image);
-
-    // for (int i = 0; i < explosion_files.count; i++) {
-    //     _textures[i] = LoadTextureFromImage(_images[i]);
-    // }
-    // struct timespec time_elapsed_load_texture;
-    // timespec_get(&time_elapsed_load_texture, TIME_UTC);
-    // double t3 = time_elapsed_ns(time_elapsed_load_image, time_elapsed_load_texture);
-
-    // printf("time_elapsed_read_file: %0.10f\n", t1);
-    // printf("time_elapsed_load_image: %0.10f\n", t2);
-    // printf("time_elapsed_load_texture: %0.10f\n", t3);
-
-    // const int explosion_animation_frame_count = 9;
-    // const char* explosion_anim_texture_files[9] = {
-    //     "asset/explosion/use/frame_00_delay-0.03s.png",
-    //     "asset/explosion/use/frame_02_delay-0.03s.png",
-    //     "asset/explosion/use/frame_06_delay-0.03s.png",
-    //     "asset/explosion/use/frame_15_delay-0.03s.png",
-    //     "asset/explosion/use/frame_21_delay-0.03s.png",
-    //     "asset/explosion/use/frame_40_delay-0.03s.png",
-    //     "asset/explosion/use/frame_53_delay-0.03s.png",
-    //     "asset/explosion/use/frame_60_delay-0.03s.png",
-    //     "asset/explosion/use/frame_70_delay-0.03s.png",
-    // };
-
-    int explosion_texture_load_completed = 0;
+    TextureHandle texture_handle = texture_assets_reserve_texture_slot(&texture_assets);
+    Image snake_head_image = LoadImage("assets\\snake-head.png");
+    texture_assets_put_image_and_create_texture(&texture_assets, texture_handle, snake_head_image);
+    
+    int explosion_texture_load_completed_event = 0;
     int explosion_textures_handle_count = 0;
     TextureHandle* explosion_textures_handles;
     AsyncioLoadTextureDir task_arg = {
         .texture_assets = &texture_assets,
-        .dirpath = "asset/explosion",
-        .completed = &explosion_texture_load_completed,
+        .dirpath = "assets\\explosion",
+        .completed_event = &explosion_texture_load_completed_event,
         .handle_count = &explosion_textures_handle_count,
-        .handles = explosion_textures_handles,
+        .handles = &explosion_textures_handles,
     };
     Task task = get_task_asyncio_load_texture_dir(&task_arg);
     thread_pool_add_task(thread_pool, task);
@@ -1060,8 +1008,8 @@ int main() {
 
     float texture_size = button_size.x;
     Rectangle texture_src_rect = {
-        .x = (texture.width - 530)/2,
-        .y = (texture.height - 530)/2,
+        .x = (snake_head_image.width - 530)/2,
+        .y = (snake_head_image.height - 530)/2,
         .width = 530,
         .height = 530,
     };
@@ -1082,7 +1030,13 @@ int main() {
     while (!window_should_close && !WindowShouldClose()) {
         float delta_time = GetFrameTime();
 
-        if (explosion_texture_load_completed) {
+        if (explosion_texture_load_completed_event) {
+            explosion_texture_load_completed_event = 0;
+
+            for (int i = 0; i < explosion_textures_handle_count; i++) {
+                texture_assets_create_texture_uncheched(&texture_assets, explosion_textures_handles[i]);
+            }
+
             float* animation_checkpoints = malloc(explosion_textures_handle_count * sizeof(float));
             for (int i = 0; i < explosion_textures_handle_count; i++) {
                 animation_checkpoints[i] = 0.03 * (i+1);
@@ -1131,8 +1085,8 @@ int main() {
         BeginDrawing();
         ClearBackground(BLACK);
 
-        Texture* texture_res = get_texture_unchecked(&texture_assets, texture_handle);
-        Texture* texture_explosion_frame = get_texture_unchecked(&texture_assets, explosion_frame);
+        Texture* texture_res = &texture_assets.textures[texture_handle.id];
+        Texture* texture_explosion_frame = texture_assets_get_texture_or_default(&texture_assets, explosion_frame);
         // DrawTexture(*texture_res, 0, 0, WHITE);
         DrawTexturePro(
             *texture_res,

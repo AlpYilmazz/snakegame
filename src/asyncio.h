@@ -8,9 +8,9 @@
 typedef struct {
     TextureAssets* texture_assets;
     const char* dirpath;
-    int* completed;
+    int* completed_event;
     int* handle_count;
-    TextureHandle* handles;
+    TextureHandle** handles;
 } AsyncioLoadTextureDir;
 
 Task get_task_asyncio_load_texture_dir(AsyncioLoadTextureDir* arg);
