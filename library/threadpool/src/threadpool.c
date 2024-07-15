@@ -168,6 +168,7 @@ void thread_pool_free(ThreadPool* pool) {
     free(pool->threads);
     task_queue_destroy(&pool->task_queue);
     DeleteCriticalSection(&pool->task_queue_lock);
+    free(pool);
 }
 
 void thread_pool_shutdown(ThreadPool* pool, ThreadPoolShutdown shutdown) {

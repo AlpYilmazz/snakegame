@@ -33,6 +33,9 @@ typedef enum {
 const int SCREEN_WIDTH = 1800;
 const int SCREEN_HEIGHT = 1000;
 
+ThreadPool* THREAD_POOL;
+TextureAssets TEXTURE_ASSETS;
+
 Grid GRID;
 GridDimentions GRID_DIM;
 GridWalls GRID_WALLS;
@@ -740,6 +743,21 @@ void play_level(const GameLevel const* level) {
             GRID_WALLS.horizontal[i][j] = level->horizontal_walls[i][j];
         }
     }
+
+    int explosion_texture_load_completed_event = 0;
+    int explosion_textures_handle_count = 0;
+    TextureHandle* explosion_textures_handles;
+    AsyncioLoadTextureDir task_arg = {
+        .texture_assets = &TEXTURE_ASSETS,
+        .dirpath = "assets\\explosion",
+        .completed_event = &explosion_texture_load_completed_event,
+        .handle_count = &explosion_textures_handle_count,
+        .handles = &explosion_textures_handles,
+    };
+    Task task = get_task_asyncio_load_texture_dir(&task_arg);
+    thread_pool_add_task(THREAD_POOL, task);
+
+    SpriteAnimation explosion_animation = {0};
     
     float UPDATE_RATE_PER_SEC = 2;
 
@@ -770,6 +788,31 @@ void play_level(const GameLevel const* level) {
     while (!level_should_exit) {
         float delta_time = GetFrameTime();
         time_elapsed += delta_time;
+
+        if (explosion_texture_load_completed_event) {
+            explosion_texture_load_completed_event = 0;
+
+            for (int i = 0; i < explosion_textures_handle_count; i++) {
+                texture_assets_create_texture_uncheched(&TEXTURE_ASSETS, explosion_textures_handles[i]);
+            }
+
+            float* animation_checkpoints = malloc(explosion_textures_handle_count * sizeof(float));
+            for (int i = 0; i < explosion_textures_handle_count; i++) {
+                animation_checkpoints[i] = 0.03 * (i+1);
+            }
+
+            SequenceTimer explosion_animation_timer = new_sequence_timer(
+                animation_checkpoints, explosion_textures_handle_count
+            );
+            explosion_animation = new_sprite_animation(
+                explosion_animation_timer,
+                explosion_textures_handles,
+                explosion_textures_handle_count
+            );
+        }
+
+        TextureHandle explosion_frame = get_current_texture(&explosion_animation);
+        tick_animation_timer(&explosion_animation, delta_time);
 
         if (IsKeyPressed(KEY_ESCAPE)) {
             level_should_exit = true;
@@ -872,6 +915,32 @@ void play_level(const GameLevel const* level) {
                 }
 
                 fireworks_draw_system(&FIREWORKS_WINSCREEN);
+
+                if (GAME_STATE == GAMEOVER_LOSE) {
+                    Texture* texture_explosion_frame = texture_assets_get_texture_or_default(&TEXTURE_ASSETS, explosion_frame);
+                    DrawTexturePro(
+                        *texture_explosion_frame,
+                        (Rectangle) {
+                            .x = 0,
+                            .y = 0,
+                            .width = texture_explosion_frame->width,
+                            .height = texture_explosion_frame->height
+                        },
+                        (Rectangle) {
+                            .x = snake.head.x * GRID.CELL_SIZE
+                                + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2
+                                - 300/2,
+                            .y = snake.head.y * GRID.CELL_SIZE
+                                + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2
+                                - 300/2,
+                            .width = 300,
+                            .height = 300,
+                        },
+                        (Vector2) {0, 0},
+                        0,
+                        WHITE
+                    );
+                }
                 
             EndMode2D();
 
@@ -912,6 +981,15 @@ void play_level(const GameLevel const* level) {
 
         EndDrawing();
     }
+
+    for (int i = 0; i < explosion_textures_handle_count; i++) {
+        if (TEXTURE_ASSETS.texture_ready[explosion_textures_handles[i].id]) {
+            texture_assets_unload_texture(&TEXTURE_ASSETS, explosion_textures_handles[i]);
+        }
+    }
+    if (explosion_textures_handle_count > 0) {
+        free(explosion_textures_handles);
+    }
 }
 
 double time_elapsed_ns(struct timespec tstart, struct timespec tend) {
@@ -922,19 +1000,12 @@ double time_elapsed_ns(struct timespec tstart, struct timespec tend) {
 int main() {
     srand(time(NULL));
 
-    ThreadPool* thread_pool = thread_pool_create(10, 100);
-    
-    // int* task_arg = malloc(sizeof(int));
-    // *task_arg = rand_in_range(100, 200);
-    // Task task = {
-    //     .handler = example_async_task_print_int_arg,
-    //     .arg = task_arg,
-    // };
-    // thread_pool_add_task(thread_pool, task);
-
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Snake Game");
-    
+
     SetTargetFPS(30);
+
+    THREAD_POOL = thread_pool_create(10, 100);
+    TEXTURE_ASSETS = new_texture_assets();
 
     {
         const int CELL_SIZE = 50;
@@ -985,26 +1056,9 @@ int main() {
 
     GameLevel level_0 = load_level(0);
 
-    TextureAssets texture_assets = new_texture_assets();
-
-    TextureHandle texture_handle = texture_assets_reserve_texture_slot(&texture_assets);
+    TextureHandle texture_handle = texture_assets_reserve_texture_slot(&TEXTURE_ASSETS);
     Image snake_head_image = LoadImage("assets\\snake-head.png");
-    texture_assets_put_image_and_create_texture(&texture_assets, texture_handle, snake_head_image);
-    
-    int explosion_texture_load_completed_event = 0;
-    int explosion_textures_handle_count = 0;
-    TextureHandle* explosion_textures_handles;
-    AsyncioLoadTextureDir task_arg = {
-        .texture_assets = &texture_assets,
-        .dirpath = "assets\\explosion",
-        .completed_event = &explosion_texture_load_completed_event,
-        .handle_count = &explosion_textures_handle_count,
-        .handles = &explosion_textures_handles,
-    };
-    Task task = get_task_asyncio_load_texture_dir(&task_arg);
-    thread_pool_add_task(thread_pool, task);
-
-    SpriteAnimation explosion_animation = {0};
+    texture_assets_put_image_and_create_texture(&TEXTURE_ASSETS, texture_handle, snake_head_image);
 
     float texture_size = button_size.x;
     Rectangle texture_src_rect = {
@@ -1029,28 +1083,6 @@ int main() {
     bool window_should_close = false;
     while (!window_should_close && !WindowShouldClose()) {
         float delta_time = GetFrameTime();
-
-        if (explosion_texture_load_completed_event) {
-            explosion_texture_load_completed_event = 0;
-
-            for (int i = 0; i < explosion_textures_handle_count; i++) {
-                texture_assets_create_texture_uncheched(&texture_assets, explosion_textures_handles[i]);
-            }
-
-            float* animation_checkpoints = malloc(explosion_textures_handle_count * sizeof(float));
-            for (int i = 0; i < explosion_textures_handle_count; i++) {
-                animation_checkpoints[i] = 0.03 * (i+1);
-            }
-
-            SequenceTimer explosion_animation_timer = new_sequence_timer(
-                animation_checkpoints, explosion_textures_handle_count
-            );
-            explosion_animation = new_sprite_animation(
-                explosion_animation_timer,
-                explosion_textures_handles,
-                explosion_textures_handle_count
-            );
-        }
 
         int hovered_button_id = -1;
         for (int i = 0; i < button_count; i++) {
@@ -1078,16 +1110,11 @@ int main() {
             }
         }
 
-        TextureHandle explosion_frame = get_current_texture(&explosion_animation);
-        tick_animation_timer(&explosion_animation, delta_time);
-
         // -- DRAW --
         BeginDrawing();
         ClearBackground(BLACK);
 
-        Texture* texture_res = &texture_assets.textures[texture_handle.id];
-        Texture* texture_explosion_frame = texture_assets_get_texture_or_default(&texture_assets, explosion_frame);
-        // DrawTexture(*texture_res, 0, 0, WHITE);
+        Texture* texture_res = &TEXTURE_ASSETS.textures[texture_handle.id];
         DrawTexturePro(
             *texture_res,
             texture_src_rect,
@@ -1096,22 +1123,9 @@ int main() {
             0,
             WHITE
         );
-        // DrawTexturePro(
-        //     *texture_res,
-        //     texture_src_rect,
-        //     texture_dist_rect_2,
-        //     (Vector2) {0, 0},
-        //     0,
-        //     WHITE
-        // );
         DrawTexturePro(
-            *texture_explosion_frame,
-            (Rectangle) {
-                .x = 0,
-                .y = 0,
-                .width = texture_explosion_frame->width,
-                .height = texture_explosion_frame->height
-            },
+            *texture_res,
+            texture_src_rect,
             texture_dist_rect_2,
             (Vector2) {0, 0},
             0,
@@ -1149,7 +1163,7 @@ int main() {
         EndDrawing();
     }
 
-    thread_pool_shutdown(thread_pool, THREADPOOL_GRACEFULL_SHUTDOWN);
+    thread_pool_shutdown(THREAD_POOL, THREADPOOL_GRACEFULL_SHUTDOWN);
     
     CloseWindow();
     
