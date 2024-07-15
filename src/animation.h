@@ -20,16 +20,19 @@ void tick_timer(Timer* timer, float delta_time_seconds);
 bool timer_is_finished(Timer* timer);
 
 typedef struct {
+    TimerMode mode;
     int checkpoint_count;
     int index;
     float* checkpoints;
     float time_elapsed;
     bool pulsed;
+    bool finished;
 } SequenceTimer;
 
-SequenceTimer new_sequence_timer(float* checkpoints, int count);
+SequenceTimer new_sequence_timer(float* checkpoints, int count, TimerMode mode);
 void tick_sequence_timer(SequenceTimer* stimer, float delta_time_seconds);
 bool sequence_timer_has_pulsed(SequenceTimer* stimer);
+bool sequence_timer_is_finished(SequenceTimer* stimer);
 
 // typedef struct {
 //     bool success;

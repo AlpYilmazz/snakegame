@@ -185,7 +185,7 @@ void init_fireworks() {
     float sq[4] = { 0.5, 1.2, 1.5, 3.0 };
     float* sequence = malloc(sequence_len * sizeof(float));
     memcpy(sequence, &sq, sequence_len * sizeof(float));
-    SequenceTimer fireworks_timer = new_sequence_timer(sequence, sequence_len);
+    SequenceTimer fireworks_timer = new_sequence_timer(sequence, sequence_len, Timer_Repeating);
 
     const int fireworks_count = 3;
     FIREWORKS_WINSCREEN = (FireworksResources) {
@@ -758,6 +758,7 @@ void play_level(const GameLevel const* level) {
     thread_pool_add_task(THREAD_POOL, task);
 
     SpriteAnimation explosion_animation = {0};
+    bool explosion_animation_loaded = false;
     
     float UPDATE_RATE_PER_SEC = 2;
 
@@ -802,17 +803,21 @@ void play_level(const GameLevel const* level) {
             }
 
             SequenceTimer explosion_animation_timer = new_sequence_timer(
-                animation_checkpoints, explosion_textures_handle_count
+                animation_checkpoints, explosion_textures_handle_count, Timer_NonRepeating
             );
             explosion_animation = new_sprite_animation(
                 explosion_animation_timer,
                 explosion_textures_handles,
                 explosion_textures_handle_count
             );
+
+            explosion_animation_loaded = true;
         }
 
         TextureHandle explosion_frame = get_current_texture(&explosion_animation);
-        tick_animation_timer(&explosion_animation, delta_time);
+        if (GAME_STATE == GAMEOVER_LOSE && explosion_animation_loaded) {
+            tick_animation_timer(&explosion_animation, delta_time);
+        }
 
         if (IsKeyPressed(KEY_ESCAPE)) {
             level_should_exit = true;
@@ -917,29 +922,34 @@ void play_level(const GameLevel const* level) {
                 fireworks_draw_system(&FIREWORKS_WINSCREEN);
 
                 if (GAME_STATE == GAMEOVER_LOSE) {
-                    Texture* texture_explosion_frame = texture_assets_get_texture_or_default(&TEXTURE_ASSETS, explosion_frame);
-                    DrawTexturePro(
-                        *texture_explosion_frame,
-                        (Rectangle) {
-                            .x = 0,
-                            .y = 0,
-                            .width = texture_explosion_frame->width,
-                            .height = texture_explosion_frame->height
-                        },
-                        (Rectangle) {
-                            .x = snake.head.x * GRID.CELL_SIZE
-                                + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2
-                                - 300/2,
-                            .y = snake.head.y * GRID.CELL_SIZE
-                                + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2
-                                - 300/2,
-                            .width = 300,
-                            .height = 300,
-                        },
-                        (Vector2) {0, 0},
-                        0,
-                        WHITE
-                    );
+                    bool finished = sequence_timer_is_finished(&explosion_animation.timer);
+                    // printf("finished: %d\n", finished);
+                    if (explosion_animation_loaded && !finished) {
+                        Texture* texture_explosion_frame = texture_assets_get_texture_or_default(&TEXTURE_ASSETS, explosion_frame);
+                        float explosion_size = __max(GRID_DIM.ROWS, GRID_DIM.COLS) * GRID.CELL_SIZE;
+                        DrawTexturePro(
+                            *texture_explosion_frame,
+                            (Rectangle) {
+                                .x = 0,
+                                .y = 0,
+                                .width = texture_explosion_frame->width,
+                                .height = texture_explosion_frame->height
+                            },
+                            (Rectangle) {
+                                .x = snake.head.x * GRID.CELL_SIZE
+                                    + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2
+                                    - explosion_size/2,
+                                .y = snake.head.y * GRID.CELL_SIZE
+                                    + GRID.CONTENT_MARGIN + GRID.CONTENT_CELL_SIZE/2
+                                    - explosion_size/2,
+                                .width = explosion_size,
+                                .height = explosion_size,
+                            },
+                            (Vector2) {0, 0},
+                            0,
+                            WHITE
+                        );
+                    }
                 }
                 
             EndMode2D();
