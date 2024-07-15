@@ -1,6 +1,11 @@
 #ifndef SNAKEGAME_GRID
 #define SNAKEGAME_GRID
 
+#include "raylib.h"
+
+#define MAX_GRID_DIMENTION 20
+#define MAX_CELL_COUNT 400
+
 typedef struct {
     int CELL_SIZE;
     int LINE_THICKNESS;
@@ -17,9 +22,14 @@ typedef struct {
 } GridDimentions;
 
 typedef struct {
-    int vertical[20][20];   // [row_i][col_i], [row_i][col_i + 1] -> [0][0], [0][1]
-    int horizontal[20][20]; // [col_i][row_i], [col_i][row_i + 1]
+    int vertical[MAX_GRID_DIMENTION][MAX_GRID_DIMENTION];   // [row_i][col_i], [row_i][col_i + 1] -> [0][0], [0][1]
+    int horizontal[MAX_GRID_DIMENTION][MAX_GRID_DIMENTION]; // [col_i][row_i], [col_i][row_i + 1]
 } GridWalls;
+
+typedef struct {
+    Vector2 cell_position[MAX_GRID_DIMENTION][MAX_GRID_DIMENTION];
+    Vector2 cell_velocity[MAX_GRID_DIMENTION][MAX_GRID_DIMENTION];
+} GridCellObjects;
 
 typedef struct {
     int x;

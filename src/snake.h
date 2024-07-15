@@ -11,7 +11,7 @@
 typedef struct {
     Cell head;
     int tail_len;
-    Cell tail[400]; // TODO: into dynamic array
+    Cell tail[MAX_CELL_COUNT]; // TODO: into dynamic array
     Cell tail_drag;
     Movement momentum;
     Color head_color;

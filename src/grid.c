@@ -1,5 +1,8 @@
+#include "raylib.h"
+
 #include "grid.h"
 
+extern Grid GRID;
 extern GridDimentions GRID_DIM;
 
 Movement movement_negate(Movement move) {

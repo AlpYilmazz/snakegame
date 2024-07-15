@@ -8,8 +8,8 @@ typedef struct {
     int cols;
     Cell snake_entry_cell;
     Movement snake_entry_momentum;
-    int vertical_walls[20][20];
-    int horizontal_walls[20][20];
+    int vertical_walls[MAX_GRID_DIMENTION][MAX_GRID_DIMENTION];
+    int horizontal_walls[MAX_GRID_DIMENTION][MAX_GRID_DIMENTION];
 } GameLevel;
 
 void save_level(int level_index, GameLevel* level);

@@ -20,7 +20,7 @@ Snake new_snake(Cell head, Movement momentum) {
         .tail_drag = {0},
         .momentum = momentum,
         .head_color = GREEN,
-        .head_color_gameover_cycle = RED,
+        .head_color_gameover_cycle = DARKGREEN,
         .tail_color = DARKGREEN,
     };
 }

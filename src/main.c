@@ -36,10 +36,12 @@ const int SCREEN_HEIGHT = 1000;
 ThreadPool* THREAD_POOL;
 TextureAssets TEXTURE_ASSETS;
 
-Grid GRID;
-GridDimentions GRID_DIM;
-GridWalls GRID_WALLS;
-GameState GAME_STATE;
+Grid GRID = {0};
+GridDimentions GRID_DIM = {0};
+GridWalls GRID_WALLS = {0};
+GridCellObjects GRID_CELL_OBJECTS = {0};
+
+GameState GAME_STATE = {0};
 
 void init_grid_dimentions(int rows, int cols) {
     GRID_DIM = (GridDimentions) {
@@ -126,6 +128,63 @@ void grid_walls_draw_system(int* last_hovered_wall) {
                 wall_color.a = 150;
                 DrawRectangleRec(wall_rect, wall_color);
             }
+        }
+    }
+}
+
+void grid_cell_objects_draw_system() {
+    for (int i = 0; i < GRID_DIM.ROWS; i++) {
+        for (int j = 0; j < GRID_DIM.COLS; j++) {
+            Vector2 pos = GRID_CELL_OBJECTS.cell_position[i][j];
+            Rectangle cell = {
+                .x = pos.x,
+                .y = pos.y,
+                .width = GRID.CELL_SIZE,
+                .height = GRID.CELL_SIZE,
+            };
+            DrawRectangleRec(cell, BEIGE);
+
+            Rectangle cell_frame = {
+                .x = cell.x - GRID.LINE_THICKNESS/2,
+                .y = cell.y - GRID.LINE_THICKNESS/2,
+                .width = GRID.CELL_SIZE + GRID.LINE_THICKNESS,
+                .height = GRID.CELL_SIZE + GRID.LINE_THICKNESS,
+            };
+            DrawRectangleLinesEx(cell_frame, GRID.LINE_THICKNESS, DARKGRAY);
+        }
+    }
+}
+
+void grid_cell_objects_position_update_system(float delta_time_seconds) {
+    const float DRAG_COEFF = 1.0 * 2.0;
+
+    for (int i = 0; i < GRID_DIM.ROWS; i++) {
+        for (int j = 0; j < GRID_DIM.COLS; j++) {
+            Vector2 velocity = GRID_CELL_OBJECTS.cell_velocity[i][j];
+
+            const Vector2 neg_velocity_norm = Vector2Normalize(Vector2Negate(velocity));
+            const float v_len = Vector2Length(velocity);
+            const float v_sq = v_len; // * v_len;
+            const float cut_section = 1;
+
+            const Vector2 AIR_DRAG = Vector2Scale(
+                neg_velocity_norm,
+                DRAG_COEFF * (v_sq/2) * cut_section
+            );
+            Vector2 accelaration = AIR_DRAG;
+
+            GRID_CELL_OBJECTS.cell_velocity[i][j] = Vector2Add(
+                velocity,
+                Vector2Scale(accelaration, delta_time_seconds)
+            );
+            if (Vector2LengthSqr(GRID_CELL_OBJECTS.cell_velocity[i][j]) < EPSILON * EPSILON) {
+                GRID_CELL_OBJECTS.cell_velocity[i][j] = Vector2Zero();
+            }
+
+            GRID_CELL_OBJECTS.cell_position[i][j] = Vector2Add(
+                GRID_CELL_OBJECTS.cell_position[i][j],
+                Vector2Scale(GRID_CELL_OBJECTS.cell_velocity[i][j], delta_time_seconds)
+            );
         }
     }
 }
@@ -744,6 +803,23 @@ void play_level(const GameLevel const* level) {
         }
     }
 
+    for (int i = 0; i < level->rows; i++) {
+        for (int j = 0; j < level->cols + 1; j++) {
+            GRID_CELL_OBJECTS.cell_position[i][j] = (Vector2) {
+                .x = j * GRID.CELL_SIZE,
+                .y = i * GRID.CELL_SIZE,
+            };
+        }
+    }
+
+    Image snake_head_sprite_image = LoadImage("assets\\snake-head-sprite.png");
+    TextureHandle snake_head_sprite_image_handle = texture_assets_reserve_texture_slot(&TEXTURE_ASSETS);
+    texture_assets_put_image_and_create_texture(&TEXTURE_ASSETS, snake_head_sprite_image_handle, snake_head_sprite_image);
+
+    Image blood_image = LoadImage("assets\\blood-splatter.png");
+    TextureHandle blood_image_handle = texture_assets_reserve_texture_slot(&TEXTURE_ASSETS);
+    texture_assets_put_image_and_create_texture(&TEXTURE_ASSETS, blood_image_handle, blood_image);
+
     int explosion_texture_load_completed_event = 0;
     int explosion_textures_handle_count = 0;
     TextureHandle* explosion_textures_handles;
@@ -756,6 +832,15 @@ void play_level(const GameLevel const* level) {
     };
     Task task = get_task_asyncio_load_texture_dir(&task_arg);
     thread_pool_add_task(THREAD_POOL, task);
+
+    Music battle_audio = LoadMusicStream("assets\\battle.mp3");
+    Music chill_town_audio = LoadMusicStream("assets\\chill-town.mp3");
+    Music scream_audio = LoadMusicStream("assets\\scream3.mp3");
+    Music explosion_audio = LoadMusicStream("assets\\explosion.mp3");
+
+    PlayMusicStream(battle_audio);
+    scream_audio.looping = false;
+    explosion_audio.looping = false;
 
     SpriteAnimation explosion_animation = {0};
     bool explosion_animation_loaded = false;
@@ -784,11 +869,28 @@ void play_level(const GameLevel const* level) {
     int food_eaten_prev_update = 0;
     int head_gameover_cycle = 0;
     int* last_hovered_wall = NULL;
+
+    bool play_battle_audio = true;
+    bool play_chill_town_audio = false;
+    
+    bool gameover_do_initiate_eaten_tail_event = false;
+
+    bool gameover_do_initiate_explosion_event = false;
+    bool gameover_explosion_initiated = false;
+    bool gameover_explosion_start_event = false;
+    bool gameover_explosion_end_event = false;
+
+    bool explosion_scream_start_event = false;
+    bool explosion_scream_end_event = false;
     
     bool level_should_exit = false;
     while (!level_should_exit) {
         float delta_time = GetFrameTime();
         time_elapsed += delta_time;
+
+        if (gameover_explosion_initiated) {
+            grid_cell_objects_position_update_system(delta_time);
+        }
 
         if (explosion_texture_load_completed_event) {
             explosion_texture_load_completed_event = 0;
@@ -812,6 +914,49 @@ void play_level(const GameLevel const* level) {
             );
 
             explosion_animation_loaded = true;
+        }
+
+        if (gameover_do_initiate_eaten_tail_event) {
+            gameover_do_initiate_eaten_tail_event = false;
+
+            StopMusicStream(battle_audio);
+            play_battle_audio = false;
+            PlayMusicStream(chill_town_audio);
+            play_chill_town_audio = true;
+        }
+
+        if (gameover_do_initiate_explosion_event) {
+            gameover_do_initiate_explosion_event = false;
+
+            Vector2 snake_head = {
+                .x = snake.head.x * GRID.CELL_SIZE,
+                .y = snake.head.y * GRID.CELL_SIZE,
+            };
+            float explosion_range = __min(GRID_DIM.ROWS, GRID_DIM.COLS) * GRID.CELL_SIZE;
+            float max_init_speed = 150.0;
+
+            for (int i = 0; i < level->rows; i++) {
+                for (int j = 0; j < level->cols + 1; j++) {
+                    Vector2 pos = GRID_CELL_OBJECTS.cell_position[i][j];
+                    Vector2 dv = Vector2Subtract(pos, snake_head);
+                    if (j == snake.head.x && i == snake.head.y) {
+                        dv = (Vector2) {1, 0};
+                    }
+
+                    float dist = Vector2Length(dv);
+                    float force = __max(explosion_range - dist, 0.0) / explosion_range;
+                    float speed = force * max_init_speed;
+                    
+                    Vector2 vel = Vector2Scale(Vector2Normalize(dv), speed);
+                    float rotate = (float)rand_in_range(0, 360);
+                    Vector2 rand_vel = Vector2Rotate((Vector2) {1, 0}, rotate);
+                    rand_vel = Vector2Scale(rand_vel, speed/3);
+
+                    GRID_CELL_OBJECTS.cell_velocity[i][j] = Vector2Add(vel, rand_vel);
+                }
+            }
+
+            gameover_explosion_initiated = true;
         }
 
         TextureHandle explosion_frame = get_current_texture(&explosion_animation);
@@ -884,10 +1029,12 @@ void play_level(const GameLevel const* level) {
             }
             if (!move_success) {
                 GAME_STATE = GAMEOVER_LOSE;
+                gameover_do_initiate_explosion_event = true;
                 goto POST_UPDATE;
             }
             if (does_intersect(&snake)) {
                 GAME_STATE = GAMEOVER_LOSE;
+                gameover_do_initiate_eaten_tail_event = true;
                 goto POST_UPDATE;
             }
 
@@ -904,6 +1051,45 @@ void play_level(const GameLevel const* level) {
         }
         POST_UPDATE:
 
+        // -- AUDIO -----
+        if (play_battle_audio) {
+            UpdateMusicStream(battle_audio);
+        }
+        if (play_chill_town_audio) {
+            UpdateMusicStream(chill_town_audio);
+        }
+
+        if (gameover_explosion_initiated && !gameover_explosion_start_event && !gameover_explosion_end_event) {
+            StopMusicStream(battle_audio);
+            play_battle_audio = false;
+
+            PlayMusicStream(explosion_audio);
+            gameover_explosion_start_event = true;
+        }
+        if (gameover_explosion_start_event && !gameover_explosion_end_event) {
+            UpdateMusicStream(explosion_audio);
+            if (!IsMusicStreamPlaying(explosion_audio)) {
+                StopMusicStream(explosion_audio);
+                gameover_explosion_end_event = true;
+            }
+        }
+
+        if (gameover_explosion_end_event && !explosion_scream_start_event && !explosion_scream_end_event) {
+            PlayMusicStream(chill_town_audio);
+            play_chill_town_audio = true;
+
+            PlayMusicStream(scream_audio);
+            // SetMusicVolume(scream_audio, 1);
+            explosion_scream_start_event = true;
+        }
+        if (explosion_scream_start_event && !explosion_scream_end_event) {
+            UpdateMusicStream(scream_audio);
+            if (!IsMusicStreamPlaying(scream_audio)) {
+                StopMusicStream(scream_audio);
+                explosion_scream_end_event = true;
+            }
+        }
+
         // -- DRAW -----
         BeginDrawing();
 
@@ -911,19 +1097,92 @@ void play_level(const GameLevel const* level) {
 
             BeginMode2D(camera);
 
-                grid_draw_system();
-                grid_walls_draw_system(last_hovered_wall);
-                snake_draw_system(&snake, head_gameover_cycle);
+                if (gameover_explosion_initiated) {
+                    grid_cell_objects_draw_system();
+                }
+                else {
+                    grid_draw_system();
+                    grid_walls_draw_system(last_hovered_wall);
+                }
 
-                if (GAME_STATE != GAMEOVER_WIN) {
+                if (GAME_STATE == GAMEOVER_LOSE && gameover_explosion_initiated) {
+                    Texture* texture_blood = texture_assets_get_texture_or_default(&TEXTURE_ASSETS, blood_image_handle);
+                    float blood_size_y = 8 * GRID.CELL_SIZE;
+                    float blood_size_x = blood_size_y * ((float)texture_blood->width / (float)texture_blood->height);
+                    // printf("w h: %d %d | w/h: %0.2f | x y: %0.2f %0.2f | x/y: %0.2f\n",
+                    //         texture_blood->width, texture_blood->height, (float)texture_blood->width / (float)texture_blood->height,
+                    //         blood_size_x, blood_size_y, blood_size_x/blood_size_y);
+                    DrawTexturePro(
+                        *texture_blood,
+                        (Rectangle) {
+                            .x = 0,
+                            .y = 0,
+                            .width = texture_blood->width,
+                            .height = texture_blood->height
+                        },
+                        (Rectangle) {
+                            .x = (snake.head.x * GRID.CELL_SIZE)
+                                + GRID.CELL_SIZE/2
+                                - blood_size_x/2,
+                            .y = (snake.head.y * GRID.CELL_SIZE)
+                                + GRID.CELL_SIZE/2
+                                - blood_size_y/2,
+                            .width = blood_size_x,
+                            .height = blood_size_y,
+                        },
+                        (Vector2) {0, 0},
+                        0,
+                        WHITE
+                    );
+                }
+
+                snake_draw_system(&snake, head_gameover_cycle);
+                
+                if (GAME_STATE == GAMEOVER_LOSE) {
+                    Texture* snake_head_sprite_texture = &TEXTURE_ASSETS.textures[snake_head_sprite_image_handle.id];
+                    float rotation;
+                    switch (snake.momentum) {
+                    case UP:
+                        rotation = 180;
+                        break;
+                    case DOWN:
+                        rotation = 0;
+                        break;
+                    case RIGHT:
+                        rotation = 90;
+                        break;
+                    case LEFT:
+                        rotation = 270;
+                        break;
+                    }
+                    DrawTexturePro(
+                        *snake_head_sprite_texture,
+                        (Rectangle) {
+                            .x = 0,
+                            .y = 0,
+                            .width = snake_head_sprite_texture->width,
+                            .height = snake_head_sprite_texture->height
+                        },
+                        (Rectangle) {
+                            .x = snake.head.x * GRID.CELL_SIZE + GRID.CONTENT_CELL_SIZE/2 + GRID.CONTENT_MARGIN,
+                            .y = snake.head.y * GRID.CELL_SIZE + GRID.CONTENT_CELL_SIZE/2 + GRID.CONTENT_MARGIN,
+                            .width = GRID.CONTENT_CELL_SIZE,
+                            .height = GRID.CONTENT_CELL_SIZE,
+                        },
+                        (Vector2) {GRID.CONTENT_CELL_SIZE/2, GRID.CONTENT_CELL_SIZE/2},
+                        rotation,
+                        WHITE
+                    );
+                }
+
+                if (GAME_STATE != GAMEOVER_WIN && !gameover_explosion_initiated) {
                     DrawCircleV(food_origin, GRID.CONTENT_CELL_SIZE/2, YELLOW);
                 }
 
                 fireworks_draw_system(&FIREWORKS_WINSCREEN);
 
-                if (GAME_STATE == GAMEOVER_LOSE) {
+                if (GAME_STATE == GAMEOVER_LOSE && gameover_explosion_initiated) {
                     bool finished = sequence_timer_is_finished(&explosion_animation.timer);
-                    // printf("finished: %d\n", finished);
                     if (explosion_animation_loaded && !finished) {
                         Texture* texture_explosion_frame = texture_assets_get_texture_or_default(&TEXTURE_ASSETS, explosion_frame);
                         float explosion_size = __max(GRID_DIM.ROWS, GRID_DIM.COLS) * GRID.CELL_SIZE;
@@ -969,7 +1228,7 @@ void play_level(const GameLevel const* level) {
                 Vector2 text_measure = MeasureTextEx(font_default, text, font_size, text_spacing);
                 Vector2 text_position = {
                     .x = SCREEN_WIDTH/2 - text_measure.x/2,
-                    .y = SCREEN_HEIGHT/2 - text_measure.y/2,
+                    .y = SCREEN_HEIGHT/4 - text_measure.y/2,
                 };
                 Color text_color = GREEN;
                 DrawTextEx(font_default, text, text_position, font_size, text_spacing, text_color);
@@ -983,7 +1242,7 @@ void play_level(const GameLevel const* level) {
                 Vector2 text_measure = MeasureTextEx(font_default, text, font_size, text_spacing);
                 Vector2 text_position = {
                     .x = SCREEN_WIDTH/2 - text_measure.x/2,
-                    .y = SCREEN_HEIGHT/2 - text_measure.y/2,
+                    .y = SCREEN_HEIGHT/4 - text_measure.y/2,
                 };
                 Color text_color = RED;
                 DrawTextEx(font_default, text, text_position, font_size, text_spacing, text_color);
@@ -991,6 +1250,16 @@ void play_level(const GameLevel const* level) {
 
         EndDrawing();
     }
+
+    StopMusicStream(battle_audio);
+    StopMusicStream(chill_town_audio);
+    StopMusicStream(scream_audio);
+    StopMusicStream(explosion_audio);
+
+    UnloadMusicStream(battle_audio);
+    UnloadMusicStream(chill_town_audio);
+    UnloadMusicStream(scream_audio);
+    UnloadMusicStream(explosion_audio);
 
     for (int i = 0; i < explosion_textures_handle_count; i++) {
         if (TEXTURE_ASSETS.texture_ready[explosion_textures_handles[i].id]) {
@@ -1011,6 +1280,7 @@ int main() {
     srand(time(NULL));
 
     InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "Snake Game");
+    InitAudioDevice();
 
     SetTargetFPS(30);
 
@@ -1090,9 +1360,14 @@ int main() {
         .height = texture_dist_rect_1.height,
     };
 
+    Music main_menu_audio = LoadMusicStream("assets\\main-menu.wav");
+    PlayMusicStream(main_menu_audio);
+
     bool window_should_close = false;
     while (!window_should_close && !WindowShouldClose()) {
         float delta_time = GetFrameTime();
+        
+        UpdateMusicStream(main_menu_audio);
 
         int hovered_button_id = -1;
         for (int i = 0; i < button_count; i++) {
@@ -1105,10 +1380,16 @@ int main() {
             }
         }
 
+        if (IsKeyPressed(KEY_ENTER)) {
+            play_level(&level_0);
+        }
+
         if (hovered_button_id != -1 && IsMouseButtonReleased(MOUSE_BUTTON_LEFT)) {
             switch (hovered_button_id) {
             case 0: // PLAY
+                PauseMusicStream(main_menu_audio);
                 play_level(&level_0);
+                ResumeMusicStream(main_menu_audio);
                 break;
             case 1: // LEVEL EDIT
                 edit_level(&level_0);
@@ -1172,6 +1453,9 @@ int main() {
 
         EndDrawing();
     }
+
+    StopMusicStream(main_menu_audio);
+    UnloadMusicStream(main_menu_audio);
 
     thread_pool_shutdown(THREAD_POOL, THREADPOOL_GRACEFULL_SHUTDOWN);
     
