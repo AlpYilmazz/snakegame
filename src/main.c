@@ -1336,9 +1336,13 @@ int main() {
 
     GameLevel level_0 = load_level(0);
 
-    TextureHandle texture_handle = texture_assets_reserve_texture_slot(&TEXTURE_ASSETS);
+    TextureHandle snake_head_texture_handle = texture_assets_reserve_texture_slot(&TEXTURE_ASSETS);
     Image snake_head_image = LoadImage("assets\\snake-head.png");
-    texture_assets_put_image_and_create_texture(&TEXTURE_ASSETS, texture_handle, snake_head_image);
+    texture_assets_put_image_and_create_texture(&TEXTURE_ASSETS, snake_head_texture_handle, snake_head_image);
+    
+    TextureHandle controls_texture_handle = texture_assets_reserve_texture_slot(&TEXTURE_ASSETS);
+    Image controls_image = LoadImage("assets\\snakegame-controls.png");
+    texture_assets_put_image_and_create_texture(&TEXTURE_ASSETS, controls_texture_handle, controls_image);
 
     float texture_size = button_size.x;
     Rectangle texture_src_rect = {
@@ -1405,9 +1409,11 @@ int main() {
         BeginDrawing();
         ClearBackground(BLACK);
 
-        Texture* texture_res = &TEXTURE_ASSETS.textures[texture_handle.id];
+        Texture* snake_head_texture_res = &TEXTURE_ASSETS.textures[snake_head_texture_handle.id];
+        Texture* controls_texture_res = &TEXTURE_ASSETS.textures[controls_texture_handle.id];
+
         DrawTexturePro(
-            *texture_res,
+            *snake_head_texture_res,
             texture_src_rect,
             texture_dist_rect_1,
             (Vector2) {0, 0},
@@ -1415,8 +1421,13 @@ int main() {
             WHITE
         );
         DrawTexturePro(
-            *texture_res,
-            texture_src_rect,
+            *controls_texture_res,
+            (Rectangle) {
+                .x = 0,
+                .y = 0,
+                .width = controls_texture_res->width,
+                .height = controls_texture_res->height,
+            },
             texture_dist_rect_2,
             (Vector2) {0, 0},
             0,
